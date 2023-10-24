@@ -11,7 +11,7 @@ class GridWorldEnv(gym.Env):
     def __str__(self):
         return "GridWorldEnv"
 
-    def __init__(self, render_mode=None, size=5):
+    def __init__(self, render_mode=None, size=10):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
 

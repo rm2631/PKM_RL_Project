@@ -1,23 +1,26 @@
-from utils.grid_world import GridWorldEnv
+from utils.GridWorldEnv import GridWorldEnv
 from stable_baselines3 import A2C, PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+import numpy as np
 
 from stable_baselines3 import A2C
 env = GridWorldEnv()
 
 RENDER_MODE = "human"
+USE_TRAINING = True
 
 env = GridWorldEnv(render_mode=RENDER_MODE)
-model = A2C.load(path=f"trained/{str(env)}", env=env, verbose=1)
+if USE_TRAINING:
+    model = A2C.load(path=f"trained/{str(env)}", env=env, verbose=1)
+else:
+    model = A2C("MultiInputPolicy", env, verbose=1)
 
-obs, info = env.reset()
+vec_env = model.get_env()
+obs = vec_env.reset()
 for i in range(1000):
-    action, _state = model.predict(obs, deterministic=True)
-    obs, reward, terminated, truncated, info = env.step(action)
-    print(f"Step {i}:", info)
-    print(f"Action {i}:", action)
-    print(f"Observation {i}:", obs)
-    env.render(RENDER_MODE)
-
-
-    
+    if USE_TRAINING:
+        action, _state = model.predict(obs, deterministic=True)
+    else:
+        action = np.array([env.action_space.sample()])
+    obs, reward, done, info = vec_env.step(action)
+    vec_env.render("human")
