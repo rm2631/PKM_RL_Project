@@ -7,7 +7,7 @@ from stable_baselines3 import A2C
 env = GridWorldEnv()
 
 RENDER_MODE = "human"
-USE_TRAINING = True
+USE_TRAINING = False
 
 env = GridWorldEnv(render_mode=RENDER_MODE)
 if USE_TRAINING:
