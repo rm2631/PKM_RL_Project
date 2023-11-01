@@ -10,6 +10,7 @@ import os
 import pyboy.openai_gym as gym
 import random
 from utils.numpy_array_to_image_and_save import numpy_array_to_image_and_save
+from skimage.transform import resize
 
 def _log_duration(func):
     def wrapper(*args, **kwargs):
@@ -32,27 +33,49 @@ class PKM_env(Env):
         }
 
     def __init__(self, render_mode=None, **kwargs):
+        ## CONFIG
         self.render_mode = render_mode
+        self.action_space = spaces.Discrete(len(self.command_map))
+        self.instance = random.getrandbits(128)
+        self.evaluate_rewards = kwargs.get("evaluate_rewards", False)
+
+
+
+
+        ## PYBOY
         window_type = 'headless' if render_mode != 'human' else 'SDL2'
         self.pyboy = PyBoy(
             'ROMs/Pokemon Red.gb',
             window_type=window_type,
         )
         self.pyboy.set_emulation_speed(5)
-        self.instance = random.getrandbits(128)
         self.screen = self.pyboy.botsupport_manager().screen()
-        self.location_history = np.empty((0, 3))
-        self.action_space = spaces.Discrete(len(self.command_map))
-        self.observation_space = spaces.Box(low=0, high=255, shape=(144, 160, 3), dtype=int)
-        self.evaluate_rewards = kwargs.get("evaluate_rewards", False)
-        self.last_party_hp = 0
-        self.last_opponent_party_hp = 0
+        self.screen_shape = (72, 80, 3) ## Half the size of the PyBoy screen
+
+        ## OBS
+        self.long_term_memory_obs = np.empty(self.screen_shape)
+        self.observation_memory = [np.empty(self.screen_shape) for _ in range(5)]
+        self.observation_space = spaces.Box(
+            low=0, 
+            high=255, 
+            shape=(self.screen_shape[0] * 3 , self.screen_shape[1], self.screen_shape[2]), 
+            dtype=np.uint8
+        )
+
+        ## Game memory
+        self.location_memory = np.empty((0, 3))
+        self.long_term_memory_dict = {}
+        self.prev_long_term_memory_dict = {}
 
     def step(
         self, action
     ) :
-        obs = self._send_command(action)
-        reward = self._handle_reward(obs)
+        self._send_command(action)
+        self._handle_long_term_memory()
+        reward = self._handle_reward()
+        obs = self._get_obs()
+        if reward > 0:
+            self._save_screen(obs)
         terminated = False
         truncated = False
         info = {}
@@ -77,69 +100,103 @@ class PKM_env(Env):
     def close(self):
         self.pyboy.stop()
 
-    def _handle_reward(self, obs):
+    def _handle_long_term_memory(self):
+        self.prev_long_term_memory_dict = self.long_term_memory_dict
+
+        pkm_1_max_hp = self.pyboy.get_memory_value(0xD18E)
+        pkm_1_current_hp = self.pyboy.get_memory_value(0xD16D)
+        pkm_1_xp = self.pyboy.get_memory_value(0xD17B)
+        pkm_1_level = self.pyboy.get_memory_value(0xD18C)
+
+        self.long_term_memory_dict = {
+            "pkm_1_max_hp": pkm_1_max_hp,
+            "pkm_1_current_hp": pkm_1_current_hp,
+            "pkm_1_xp": pkm_1_xp,
+            "pkm_1_level": pkm_1_level,
+        }
+
+        updated_long_term_memory = np.zeros(self.screen_shape)
+        for i, (key, value) in enumerate(self.long_term_memory_dict.items()):
+            if i >= len(self.long_term_memory_obs):
+                break
+            updated_long_term_memory[i, 0, 0] = int(value)
+        self.long_term_memory_obs = updated_long_term_memory
+
+    def _handle_reward(self):
         if not self.evaluate_rewards:
             return 0
         new_reward = 0
-        new_reward += self._handle_position(obs)
-        new_reward += self._handle_party_hp(obs)
-        new_reward += self._handle_opponent_party_hp(obs)
-
-        if new_reward > 0:
-            print(f"Reward: {new_reward}")
-            self._save_screen()
+        new_reward += self._handle_position_reward()
+        new_reward += self._handle_memory_reward()
         return new_reward
     
-
+    def _handle_memory_reward(self):
+        reward = 0
+        for key in self.long_term_memory_dict.keys():
+            previous_memory_value = self.prev_long_term_memory_dict.get(key, None)
+            current_memory_value = self.long_term_memory_dict.get(key, None)
+            if previous_memory_value is None or current_memory_value is None:
+                continue
+            ## this works because the game benefits from increasing all evaluated values.
+            if current_memory_value > previous_memory_value:
+                reward += 5
+        return reward
     
-    def _handle_position(self, obs):
+    def _handle_position_reward(self):
         Y = self.pyboy.get_memory_value(0xD361)
         X = self.pyboy.get_memory_value(0xD362)
         M = self.pyboy.get_memory_value(0xD35E)
         location_array = np.array([Y, X, M])
-        if self.location_history is None:
-            self.location_history = np.vstack((self.location_history, location_array))
+        
+        if self.location_memory is None:
+            self.location_memory = np.vstack((self.location_memory, location_array))
             return 1
         #filter self.location_history by M
-        map_location_history = self.location_history[np.where(self.location_history[:, -1] == M)]
+        map_location_history = self.location_memory[np.where(self.location_memory[:, -1] == M)]
         if len(map_location_history) == 0:
-            self.location_history = np.vstack((self.location_history, location_array))
+            self.location_memory = np.vstack((self.location_memory, location_array))
             return 1
         #Calculate distances between current location and all previous locations
         distances = np.linalg.norm(map_location_history - location_array, axis=1)
         #Find the minimum distance
         min_distance = distances.min()
         if min_distance > 1:
-            self.location_history = np.vstack((self.location_history, location_array))
+            self.location_memory = np.vstack((self.location_memory, location_array))
             return 1 # positive reward for moving to a new location
         return 0
     
-    def _handle_party_hp(self, obs):
-        current_party_hp = 0
-        hp_memory_addresses = [0xD16D, 0xD199, 0xD1C5, 0xD1F1, 0xD21D, 0xD249]
-        for address in hp_memory_addresses:
-            current_party_hp += self.pyboy.get_memory_value(address)    
-        if current_party_hp > self.last_party_hp:
-            self.last_party_hp = current_party_hp
-            return 2 # positive reward for increasing total hp, either by healing or leveling up
-        return 0
-    
-    def _handle_opponent_party_hp(self, obs):
-        current_opponent_party_hp = 0
-        hp_memory_addresses = [0xD8A6, 0xD8D2, 0xD8FE, 0xD92A, 0xD956, 0xD982]
-        for address in hp_memory_addresses:
-            current_opponent_party_hp += self.pyboy.get_memory_value(address)
-        if current_opponent_party_hp < self.last_opponent_party_hp:
-            self.last_opponent_party_hp = current_opponent_party_hp
-            return 1 # positive reward for decreasing opponent's total hp
-        return 0
-    
-    def _get_obs(self):
+    def _append_new_observation_to_memory(self):
+        ## new screen
         game_pixels_render = self.screen.screen_ndarray()
-        return game_pixels_render
+        ## resize the screens
+        game_pixels_render = (255*resize(game_pixels_render, self.screen_shape)).astype(np.uint8)
+        ## pop the last observation and add the new one
+        self.observation_memory.pop(0)
+        self.observation_memory.append(game_pixels_render)
+        if len(self.observation_memory) != 5:
+            raise Exception("Observation memory is not 5")
+        
+    def _create_short_term_memory_stack(self):     
+        ## Create a 2x2 grid of the last 4 observations
+        half_screen_shape = (self.screen_shape[0] // 2, self.screen_shape[1] // 2, self.screen_shape[2])
+        previous_observations = [
+                (255*resize(i, half_screen_shape)).astype(np.uint8)
+                for i in self.observation_memory[:-1]
+            ]
+        top_row = np.hstack((previous_observations[3], previous_observations[2]))
+        bottom_row = np.hstack((previous_observations[1], previous_observations[0]))
+        previous_observations = np.vstack((top_row, bottom_row))
+        return previous_observations
+
+    def _get_obs(self):
+        self._append_new_observation_to_memory()
+        previous_observations = self._create_short_term_memory_stack()
+        current_observation = self.observation_memory[-1]
+        obs = np.vstack((self.long_term_memory_obs, current_observation, previous_observations))
+        return obs
     
     def _get_info(self):
-        return {}
+        return {"memory": self.long_term_memory_dict, "prev_memory": self.prev_long_term_memory_dict, "location_history": self.location_memory}
     
     def _send_command(self, command) -> np.ndarray:
         """
@@ -161,22 +218,16 @@ class PKM_env(Env):
                 else:
                     self.pyboy._rendering(False)
                 self.pyboy.tick()
-        obs = self._get_obs()
-        return obs
     
     def _extract_screen_chat(self, obs):
         chat_size = 50
         chat = obs[-chat_size:, :, :]
         return chat
 
-    def _save_screen(self):
+    def _save_screen(self, obs):
         now = datetime.now()
         day_string = now.strftime("%d-%m-%Y")
-        dt_string = now.strftime("%d-%m-%Y_%H-%M-%S")
         directory = f"screenshots/{day_string}/{self.instance}"
         if not os.path.exists(directory):
             os.makedirs(directory)
-        pil_image = self.pyboy.screen_image()
-        #save image with datetime as name
-        pil_image.save(f"{directory}/{dt_string}.png")
-
+        numpy_array_to_image_and_save(obs, f"{directory}")
