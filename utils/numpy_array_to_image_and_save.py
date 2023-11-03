@@ -3,9 +3,10 @@ import numpy as np
 import os
 from datetime import datetime
 
+
 def numpy_array_to_image_and_save(array, save_folder="saved_images"):
     """
-    Converts a NumPy array of shape (144, 160, 3) to an image and saves it to a folder with a filename based on the current datetime.
+    Converts a NumPy array to an image and saves it to a folder with a filename based on the current datetime.
 
     Args:
         array (numpy.ndarray): The input NumPy array.
