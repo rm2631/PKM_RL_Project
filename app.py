@@ -1,9 +1,9 @@
-from train_model import main as train
-from run_pretrained import main as run
-from run_train_test import main as train_test
+from train import main as train
+from test import main as test
+from run import main as run
 
 
-if __name__ == '__main__':
-    # train() ## for full training
+if __name__ == "__main__":
+    # train()  ## for full training
+    test()  ## tweaking tests
     # run() ## for pretrained model
-    train_test() ## tweaking tests

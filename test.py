@@ -16,6 +16,6 @@ def main():
         model = PPO.load("trained/PKM", env=env, verbose=1, device="cuda")
     else:
         model = PPO("CnnPolicy", env, verbose=1, device="cuda")
-    total_timesteps = 10000  # You can adjust this as needed
+    total_timesteps = 20000  # You can adjust this as needed
     model.learn(total_timesteps)
     env.close()
