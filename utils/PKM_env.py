@@ -11,6 +11,8 @@ import pyboy.openai_gym as gym
 import random
 from utils.numpy_array_to_image_and_save import numpy_array_to_image_and_save
 from skimage.transform import resize
+import mediapy as media
+from pathlib import Path
 
 
 def _log_duration(func):
@@ -20,7 +22,6 @@ def _log_duration(func):
         end = datetime.now()
         print(f"{func.__name__} took {end - start}")
         return result
-
     return wrapper
 
 
@@ -94,6 +95,16 @@ class PKM_env(Env):
         super().reset(seed=seed, options=options)
         self.seed = seed
         self.pyboy.load_state(open("ROMs/Pokemon Red.gb.state", "rb"))
+
+        if self.save_video:
+            base_dir = Path("rollouts")
+            base_dir.mkdir(exist_ok=True)
+            filename = Path(f"{self.seed}").with_suffix(".mp4")
+            self.full_frame_writer = media.VideoWriter(
+                base_dir / filename, (144, 160), fps=60
+            )
+            self.full_frame_writer.__enter__()
+
         obs = self._get_obs()
         info = {}
         return obs, info
