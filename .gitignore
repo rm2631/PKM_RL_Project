@@ -1,3 +1,5 @@
 .venv
 screenshots/*
 trained
+rollouts
+*__pycache__*

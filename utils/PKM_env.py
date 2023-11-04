@@ -22,6 +22,7 @@ def _log_duration(func):
         end = datetime.now()
         print(f"{func.__name__} took {end - start}")
         return result
+
     return wrapper
 
 
@@ -42,6 +43,7 @@ class PKM_env(Env):
         self.action_space = spaces.Discrete(len(self.command_map))
         self.instance = random.getrandbits(128)
         self.evaluate_rewards = kwargs.get("evaluate_rewards", False)
+        self.save_video = kwargs.get("save_video", False)
 
         ## PYBOY
         window_type = "headless" if render_mode != "human" else "SDL2"
@@ -95,16 +97,6 @@ class PKM_env(Env):
         super().reset(seed=seed, options=options)
         self.seed = seed
         self.pyboy.load_state(open("ROMs/Pokemon Red.gb.state", "rb"))
-
-        if self.save_video:
-            base_dir = Path("rollouts")
-            base_dir.mkdir(exist_ok=True)
-            filename = Path(f"{self.seed}").with_suffix(".mp4")
-            self.full_frame_writer = media.VideoWriter(
-                base_dir / filename, (144, 160), fps=60
-            )
-            self.full_frame_writer.__enter__()
-
         obs = self._get_obs()
         info = {}
         return obs, info
