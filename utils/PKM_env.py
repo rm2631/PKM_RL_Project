@@ -14,6 +14,7 @@ from utils.reward_functions import (
     handle_hp_change_reward,
     handle_xp_change_reward,
     handle_opponent_hp_change_reward,
+    handle_downed_pokemon,
 )
 from skimage.transform import resize
 import mediapy as media
@@ -184,7 +185,7 @@ class PKM_env(Env):
         location_array = self._get_location_array()
         self.long_term_memory_dict = {
             "pkm_hp": (
-                handle_hp_change_reward,
+                [handle_hp_change_reward, handle_downed_pokemon],
                 [
                     self.pyboy.get_memory_value(0xD16D),
                     self.pyboy.get_memory_value(0xD199),
@@ -195,7 +196,7 @@ class PKM_env(Env):
                 ],
             ),
             "pkm_xp": (
-                handle_xp_change_reward,
+                [handle_xp_change_reward],
                 [
                     self.pyboy.get_memory_value(0xD17B),
                     self.pyboy.get_memory_value(0xD1A7),
@@ -206,7 +207,7 @@ class PKM_env(Env):
                 ],
             ),
             "opponent_pkm_hp": (
-                handle_opponent_hp_change_reward,
+                [handle_opponent_hp_change_reward],
                 [
                     self.pyboy.get_memory_value(0xCFE7),
                 ],
@@ -280,7 +281,8 @@ class PKM_env(Env):
             ) = self.prev_long_term_memory_dict.get(key, (None, None))
             if previous_memory_value is None:
                 continue
-            reward += curr_reward_function(current_memory_value, previous_memory_value)
+            for func in curr_reward_function:
+                reward += func(current_memory_value, previous_memory_value)
         return reward
 
     def _append_new_observation_to_memory(self):
