@@ -10,6 +10,11 @@ import os
 import pyboy.openai_gym as gym
 import random
 from utils.numpy_array_to_image_and_save import numpy_array_to_image_and_save
+from utils.reward_functions import (
+    handle_hp_change_reward,
+    handle_xp_change_reward,
+    handle_opponent_hp_change_reward,
+)
 from skimage.transform import resize
 import mediapy as media
 from pathlib import Path
@@ -79,7 +84,7 @@ class PKM_env(Env):
     def step(self, action):
         self._send_command(action)
         reward = self._handle_reward()
-        self._handle_long_term_memory()
+        self._handle_long_term_memory_observation()
         obs = self._get_obs()
         if reward > 0:
             # print(f"Reward ---- {reward}")
@@ -147,29 +152,13 @@ class PKM_env(Env):
         return long_term_position_memory
 
     def _handle_stats_memory(self):
-        ##party stats
-        self.prev_long_term_memory_dict = self.long_term_memory_dict
-        self.long_term_memory_dict = {
-            "pkm_max_hp": self.pyboy.get_memory_value(0xD18E),
-            "pkm_current_hp": self.pyboy.get_memory_value(0xD16D),
-            "pkm_xp": self.pyboy.get_memory_value(0xD17B),
-            "pkm_level": self.pyboy.get_memory_value(0xD18C),
-        }
-        ##location
-        location_array = self._get_location_array()
-        long_term_memory_dict = {
-            **self.long_term_memory_dict,
-            "Y": location_array[0],
-            "X": location_array[1],
-            "M": location_array[2],
-        }
-        ##opponent stats
-        self.previous_opponent_memory = self.opponent_memory
-        self.opponent_memory = {
-            "opp_pkm_1": self.pyboy.get_memory_value(0xCFE7),
-        }
-        long_term_memory_dict = {**long_term_memory_dict, **self.opponent_memory}
-
+        self._produce_long_term_memory()
+        items_in_long_term_memory = [
+            item
+            for _, items in self.long_term_memory_dict.values()
+            for item in items
+            if items is not None
+        ]
         ## create the long term memory array
         reserved_buffer = 5
         long_term_stats_memory = np.zeros(
@@ -177,17 +166,65 @@ class PKM_env(Env):
         )
 
         i = 0
-        while i < len(long_term_memory_dict):
+        while i < len(items_in_long_term_memory):
             for y in range(long_term_stats_memory.shape[0]):
                 for x in range(long_term_stats_memory.shape[1]):
-                    if i >= len(long_term_memory_dict):
+                    if i >= len(items_in_long_term_memory):
                         break
-                    value = list(long_term_memory_dict.values())[i]
+                    value = list(items_in_long_term_memory)[i]
                     long_term_stats_memory[y, x, 1] = value
                     i += 1
         return long_term_stats_memory, reserved_buffer
 
-    def _handle_long_term_memory(self):
+    def _produce_long_term_memory(self):
+        """
+        Produce the long term memory dictionary
+        """
+        self.prev_long_term_memory_dict = self.long_term_memory_dict
+        location_array = self._get_location_array()
+        self.long_term_memory_dict = {
+            "pkm_hp": (
+                handle_hp_change_reward,
+                [
+                    self.pyboy.get_memory_value(0xD16D),
+                    self.pyboy.get_memory_value(0xD199),
+                    self.pyboy.get_memory_value(0xD1C5),
+                    self.pyboy.get_memory_value(0xD1F1),
+                    self.pyboy.get_memory_value(0xD21D),
+                    self.pyboy.get_memory_value(0xD249),
+                ],
+            ),
+            "pkm_xp": (
+                handle_xp_change_reward,
+                [
+                    self.pyboy.get_memory_value(0xD17B),
+                    self.pyboy.get_memory_value(0xD1A7),
+                    self.pyboy.get_memory_value(0xD1D3),
+                    self.pyboy.get_memory_value(0xD1FF),
+                    self.pyboy.get_memory_value(0xD22B),
+                    self.pyboy.get_memory_value(0xD257),
+                ],
+            ),
+            "opponent_pkm_hp": (
+                handle_opponent_hp_change_reward,
+                [
+                    self.pyboy.get_memory_value(0xCFE7),
+                ],
+            ),
+            "location": (
+                None,
+                [
+                    location_array[0],
+                    location_array[1],
+                    location_array[2],
+                ],
+            ),
+        }
+
+    def _handle_long_term_memory_observation(self):
+        """
+        Produce the long term memory observation
+        """
         long_term_stats_memory, reserved_buffer = self._handle_stats_memory()
         long_term_position_memory = self._handle_position_memory(reserved_buffer)
         updated_long_term_memory = np.vstack(
@@ -201,8 +238,7 @@ class PKM_env(Env):
             return 0
         new_reward = 0
         new_reward += self._handle_position_reward()
-        new_reward += self._handle_party_reward()
-        new_reward += self._handle_opponent_reward()
+        new_reward += self._handle_long_term_memory_reward()
         return new_reward
 
     def _get_location_array(self):
@@ -230,28 +266,21 @@ class PKM_env(Env):
             return 1  # positive reward for moving to a new location
         return 0
 
-    def _handle_party_reward(self):
+    def _handle_long_term_memory_reward(self):
         reward = 0
         for key in self.long_term_memory_dict.keys():
-            previous_memory_value = self.prev_long_term_memory_dict.get(key, None)
-            current_memory_value = self.long_term_memory_dict.get(key, None)
-            if previous_memory_value is None or current_memory_value is None:
+            curr_reward_function, current_memory_value = self.long_term_memory_dict.get(
+                key
+            )
+            if curr_reward_function is None:
                 continue
-            ## this works because the game benefits from increasing all evaluated values.
-            if current_memory_value > previous_memory_value:
-                reward += 3
-        return reward
-
-    def _handle_opponent_reward(self):
-        reward = 0
-        for key in self.opponent_memory.keys():
-            previous_memory_value = self.previous_opponent_memory.get(key, None)
-            current_memory_value = self.opponent_memory.get(key, None)
-            if previous_memory_value is None or current_memory_value is None:
+            (
+                prev_reward_function,
+                previous_memory_value,
+            ) = self.prev_long_term_memory_dict.get(key, (None, None))
+            if previous_memory_value is None:
                 continue
-            ## this works because the game benefits from increasing all evaluated values.
-            if current_memory_value < previous_memory_value:
-                reward += 2
+            reward += curr_reward_function(current_memory_value, previous_memory_value)
         return reward
 
     def _append_new_observation_to_memory(self):
