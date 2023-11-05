@@ -4,7 +4,9 @@ import os
 from datetime import datetime
 
 
-def numpy_array_to_image_and_save(array, save_folder="saved_images"):
+def numpy_array_to_image_and_save(
+    array, save_folder="saved_images", additional_info=None
+):
     """
     Converts a NumPy array to an image and saves it to a folder with a filename based on the current datetime.
 
@@ -20,7 +22,12 @@ def numpy_array_to_image_and_save(array, save_folder="saved_images"):
 
     # Generate a filename based on the current datetime
     current_datetime = datetime.now()
-    filename = current_datetime.strftime("%Y-%m-%d_%H-%M-%S") + ".jpg"
+    filename = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
+
+    if additional_info is not None:
+        filename = filename + "_" + str(additional_info)
+
+    filename = filename + ".png"
 
     # Create the save path by joining the folder and filename
     save_path = os.path.join(save_folder, filename)

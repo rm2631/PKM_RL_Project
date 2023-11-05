@@ -87,9 +87,9 @@ class PKM_env(Env):
         reward = self._handle_reward()
         self._handle_long_term_memory_observation()
         obs = self._get_obs()
-        if reward > 0:
-            # print(f"Reward ---- {reward}")
-            self._save_screen(obs)
+        if reward != 0:
+            print(f"Reward ---- {reward}")
+            self._save_screen(obs, reward=reward)
         terminated = False
         truncated = False
         info = {}
@@ -183,6 +183,11 @@ class PKM_env(Env):
         """
         self.prev_long_term_memory_dict = self.long_term_memory_dict
         location_array = self._get_location_array()
+        """
+        Each key in the long term memory dict is a tuple of two lists.
+        The first list is a list of functions that calculate the reward for that key.
+        The second list is a list of the memory addresses that are used to calculate the reward.
+        """
         self.long_term_memory_dict = {
             "pkm_hp": (
                 [handle_hp_change_reward, handle_downed_pokemon],
@@ -210,6 +215,17 @@ class PKM_env(Env):
                 [handle_opponent_hp_change_reward],
                 [
                     self.pyboy.get_memory_value(0xCFE7),
+                ],
+            ),
+            "pkm_max_hp": (
+                None,
+                [
+                    self.pyboy.get_memory_value(0xD18E),
+                    self.pyboy.get_memory_value(0xD1BA),
+                    self.pyboy.get_memory_value(0xD1E6),
+                    self.pyboy.get_memory_value(0xD212),
+                    self.pyboy.get_memory_value(0xD23E),
+                    self.pyboy.get_memory_value(0xD26A),
                 ],
             ),
             "location": (
@@ -356,10 +372,10 @@ class PKM_env(Env):
         chat = obs[-chat_size:, :, :]
         return chat
 
-    def _save_screen(self, obs):
+    def _save_screen(self, obs, reward=0):
         now = datetime.now()
         day_string = now.strftime("%d-%m-%Y")
         directory = f"screenshots/{day_string}/{self.instance}"
         if not os.path.exists(directory):
             os.makedirs(directory)
-        numpy_array_to_image_and_save(obs, f"{directory}")
+        numpy_array_to_image_and_save(obs, f"{directory}", additional_info=reward)

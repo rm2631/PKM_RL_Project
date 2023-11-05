@@ -6,7 +6,7 @@ import os
 
 def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
-    num_envs = 1
+    num_envs = 5
     render_mode = "human"
     options = {
         "evaluate_rewards": True,
