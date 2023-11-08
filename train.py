@@ -13,7 +13,11 @@ def main():
         # "save_video": True,
     }
     for i in range(20):
-        print(f"Training model RUN {i+1}")
+        ## Print a big header for each run
+        print("=" * 80)
+        print(f"Training iteration {i}")
+        print("=" * 80)
+
         env = SubprocVecEnv(
             [
                 lambda: create_env(render_mode=render_mode, **options)

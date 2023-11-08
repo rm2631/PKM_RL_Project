@@ -96,7 +96,7 @@ def handle_xp_change_reward(current_value: [int], previous_value: [int]):
     Reward function for handling xp change
     """
     reward_list = _calculate_reward_allocation(
-        _skewed_rewards, current_value, previous_value, 0, 2, 10
+        _skewed_rewards, current_value, previous_value, 0, 4, 10
     )
     reward = sum(reward_list)
     return reward
