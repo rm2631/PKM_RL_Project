@@ -50,11 +50,17 @@ class PKM_env(Env):
         self.instance = random.getrandbits(128)
         self.evaluate_rewards = kwargs.get("evaluate_rewards", False)
         self.save_video = kwargs.get("save_video", False)
+        self.env_index = kwargs.get("env_index", None)
+        self.epoch = kwargs.get("epoch", None)
 
         ## PYBOY
         window_type = "headless" if render_mode != "human" else "SDL2"
+        rom_name = "ROMs/Pokemon Red.gb"
+        if self.epoch is not None:
+            if self.epoch != 0:
+                rom_name = f"ROMs/Pokemon Red {self.epoch - 1}.gb"
         self.pyboy = PyBoy(
-            "ROMs/Pokemon Red.gb",
+            rom_name,
             window_type=window_type,
         )
         self.pyboy.set_emulation_speed(5)
@@ -112,6 +118,11 @@ class PKM_env(Env):
             return None
 
     def close(self):
+        if self.env_index == 0:
+            if self.epoch:
+                if self.epoch != 0:
+                    epoch_state = open(f"ROMs/Pokemon Red {self.epoch}.gb", "wb")
+                    self.pyboy.save_state(epoch_state)
         self.pyboy.stop()
 
     def _handle_position_memory(self, reserved_buffer):

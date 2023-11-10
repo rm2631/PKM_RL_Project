@@ -8,7 +8,7 @@ def _skewed_rewards(
     nb_reward_bins: int,
     reward_negative_values: bool = False,
 ):
-    skew_factor = 3.0
+    skew_factor = 2.0
     reward_bins = []
     lower_thresholds = np.linspace(0, 1, nb_reward_bins)
 
@@ -21,6 +21,8 @@ def _skewed_rewards(
         reward = reward_lower_bound + (reward_upper_bound - reward_lower_bound) * (
             lower_threshold**skew_factor
         )
+        ## Round to 2 decimal places
+        reward = round(reward, 1)
         reward_bins.append((multiplier * lower_threshold, reward))
 
     return reward_bins
@@ -96,7 +98,7 @@ def handle_xp_change_reward(current_value: [int], previous_value: [int]):
     Reward function for handling xp change
     """
     reward_list = _calculate_reward_allocation(
-        _skewed_rewards, current_value, previous_value, 0, 4, 10
+        _skewed_rewards, current_value, previous_value, 0, 5, 10
     )
     reward = sum(reward_list)
     return reward
@@ -138,10 +140,10 @@ def handle_downed_pokemon(current_value: [int], previous_value: [int]):
 
 if __name__ == "__main__":
     lower_bound = 0
-    upper_bound = 2
-    nb_bins = 5
+    upper_bound = 5
+    nb_bins = 20
 
-    for function in [_linear_rewards, _skewed_rewards]:
+    for function in [_skewed_rewards]:
         for reward_negative_values in [False, True]:
             lower_thresholds, rewards = zip(
                 *function(
