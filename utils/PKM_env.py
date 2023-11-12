@@ -43,22 +43,18 @@ class PKM_env(Env):
         6: [WindowEvent.PRESS_BUTTON_B, WindowEvent.RELEASE_BUTTON_B],
     }
 
-    def __init__(self, render_mode=None, **kwargs):
+    def __init__(self, render_mode=None, **options):
         ## CONFIG
         self.render_mode = render_mode
         self.action_space = spaces.Discrete(len(self.command_map))
         self.instance = random.getrandbits(128)
-        self.evaluate_rewards = kwargs.get("evaluate_rewards", False)
-        self.save_video = kwargs.get("save_video", False)
-        self.env_index = kwargs.get("env_index", None)
-        self.epoch = kwargs.get("epoch", None)
+        ## HANDLE OPTIONS
+        for key, value in options.items():
+            setattr(self, key, value)
 
         ## PYBOY
         window_type = "headless" if render_mode != "human" else "SDL2"
         rom_name = "ROMs/Pokemon Red.gb"
-        if self.epoch is not None:
-            if self.epoch != 0:
-                rom_name = f"ROMs/Pokemon Red {self.epoch - 1}.gb"
         self.pyboy = PyBoy(
             rom_name,
             window_type=window_type,
@@ -94,8 +90,9 @@ class PKM_env(Env):
         self._handle_long_term_memory_observation()
         obs = self._get_obs()
         if reward != 0:
-            print(f"Reward ---- {reward}")
-            self._save_screen(obs, reward=reward)
+            if self.verbose:
+                print(f"Reward ---- {reward}")
+                self._save_screen(obs, reward=reward)
         terminated = False
         truncated = False
         info = {}
@@ -108,7 +105,8 @@ class PKM_env(Env):
     ):  # type: ignore
         super().reset(seed=seed, options=options)
         self.seed = seed
-        self.pyboy.load_state(open("ROMs/Pokemon Red.gb.state", "rb"))
+        state_name = "ROMs/Pokemon Red.gb.state"
+        self.pyboy.load_state(open(state_name, "rb"))
         obs = self._get_obs()
         info = {}
         return obs, info
@@ -118,11 +116,6 @@ class PKM_env(Env):
             return None
 
     def close(self):
-        if self.env_index == 0:
-            if self.epoch:
-                if self.epoch != 0:
-                    epoch_state = open(f"ROMs/Pokemon Red {self.epoch}.gb", "wb")
-                    self.pyboy.save_state(epoch_state)
         self.pyboy.stop()
 
     def _handle_position_memory(self, reserved_buffer):
