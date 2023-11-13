@@ -87,38 +87,38 @@ def handle_hp_change_reward(current_value: [int], previous_value: [int]):
     Reward function for handling hp change
     """
     reward_list = _calculate_reward_allocation(
-        _linear_rewards, current_value, previous_value, 0, 2, 10
+        _skewed_rewards, current_value, previous_value, 0, 1, 10
     )
     reward = sum(reward_list)
     return reward
 
 
-def handle_xp_change_reward(current_value: [int], previous_value: [int]):
-    """
-    Reward function for handling xp change
-    """
-    reward_list = _calculate_reward_allocation(
-        _skewed_rewards, current_value, previous_value, 0, 5, 10
-    )
-    reward = sum(reward_list)
-    return reward
+# def handle_xp_change_reward(current_value: [int], previous_value: [int]):
+#     """
+#     Reward function for handling xp change
+#     """
+#     reward_list = _calculate_reward_allocation(
+#         _skewed_rewards, current_value, previous_value, 0, 1, 10
+#     )
+#     reward = sum(reward_list)
+#     return reward
 
 
-def handle_opponent_hp_change_reward(current_value: [int], previous_value: [int]):
-    """
-    Reward function for handling opponent hp change
-    """
-    reward_list = _calculate_reward_allocation(
-        _skewed_rewards,
-        current_value,
-        previous_value,
-        0,
-        1,
-        10,
-        reward_negative_values=True,
-    )
-    reward = sum(reward_list)
-    return reward
+# def handle_opponent_hp_change_reward(current_value: [int], previous_value: [int]):
+#     """
+#     Reward function for handling opponent hp change
+#     """
+#     reward_list = _calculate_reward_allocation(
+#         _skewed_rewards,
+#         current_value,
+#         previous_value,
+#         0,
+#         1,
+#         10,
+#         reward_negative_values=True,
+#     )
+#     reward = sum(reward_list)
+#     return reward
 
 
 def handle_downed_pokemon(current_value: [int], previous_value: [int]):
@@ -136,6 +136,16 @@ def handle_downed_pokemon(current_value: [int], previous_value: [int]):
         ## If the reward is not 0, we want to make sure that the reward is not too big to avoid traumas
         reward = max(reward, -1)
     return reward
+
+
+def handle_level_change(current_value: [int], previous_value: [int]):
+    """
+    Reward function for handling level change
+    """
+    for current_value, previous_value in zip(current_value, previous_value):
+        if current_value > previous_value:
+            return 1
+    return 0
 
 
 if __name__ == "__main__":

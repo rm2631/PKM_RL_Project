@@ -12,24 +12,12 @@ import random
 from utils.numpy_array_to_image_and_save import numpy_array_to_image_and_save
 from utils.reward_functions import (
     handle_hp_change_reward,
-    handle_xp_change_reward,
-    handle_opponent_hp_change_reward,
     handle_downed_pokemon,
+    handle_level_change,
 )
 from skimage.transform import resize
 import mediapy as media
 from pathlib import Path
-
-
-def _log_duration(func):
-    def wrapper(*args, **kwargs):
-        start = datetime.now()
-        result = func(*args, **kwargs)
-        end = datetime.now()
-        print(f"{func.__name__} took {end - start}")
-        return result
-
-    return wrapper
 
 
 class PKM_env(Env):
@@ -198,47 +186,10 @@ class PKM_env(Env):
         Each key in the long term memory dict is a tuple of two lists.
         The first list is a list of functions that calculate the reward for that key.
         The second list is a list of the memory addresses that are used to calculate the reward.
+
+        The first list can be None, in which case the reward is not calculated for that key. For these instances, these values are recorded in the long term memory for observation, but not used to calculate the reward.
         """
         self.long_term_memory_dict = {
-            "pkm_hp": (
-                [handle_hp_change_reward, handle_downed_pokemon],
-                [
-                    self.pyboy.get_memory_value(0xD16D),
-                    self.pyboy.get_memory_value(0xD199),
-                    self.pyboy.get_memory_value(0xD1C5),
-                    self.pyboy.get_memory_value(0xD1F1),
-                    self.pyboy.get_memory_value(0xD21D),
-                    self.pyboy.get_memory_value(0xD249),
-                ],
-            ),
-            "pkm_xp": (
-                [handle_xp_change_reward],
-                [
-                    self.pyboy.get_memory_value(0xD17B),
-                    self.pyboy.get_memory_value(0xD1A7),
-                    self.pyboy.get_memory_value(0xD1D3),
-                    self.pyboy.get_memory_value(0xD1FF),
-                    self.pyboy.get_memory_value(0xD22B),
-                    self.pyboy.get_memory_value(0xD257),
-                ],
-            ),
-            "opponent_pkm_hp": (
-                [handle_opponent_hp_change_reward],
-                [
-                    self.pyboy.get_memory_value(0xCFE7),
-                ],
-            ),
-            "pkm_max_hp": (
-                None,
-                [
-                    self.pyboy.get_memory_value(0xD18E),
-                    self.pyboy.get_memory_value(0xD1BA),
-                    self.pyboy.get_memory_value(0xD1E6),
-                    self.pyboy.get_memory_value(0xD212),
-                    self.pyboy.get_memory_value(0xD23E),
-                    self.pyboy.get_memory_value(0xD26A),
-                ],
-            ),
             "location": (
                 None,
                 [
@@ -247,6 +198,50 @@ class PKM_env(Env):
                     location_array[2],
                 ],
             ),
+            "party_hp": (
+                [handle_hp_change_reward, handle_downed_pokemon],
+                [
+                    self.pyboy.get_memory_value(i)
+                    for i in [0xD16D, 0xD199, 0xD1C5, 0xD1F1, 0xD21D, 0xD249]
+                ],
+            ),
+            "party_max_hp": (
+                None,
+                [
+                    self.pyboy.get_memory_value(i)
+                    for i in [0xD18E, 0xD1BA, 0xD1E6, 0xD212, 0xD23E, 0xD26A]
+                ],
+            ),
+            "party_level": (
+                [handle_level_change],
+                [
+                    self.pyboy.get_memory_value(i)
+                    for i in [0xD18C, 0xD1B8, 0xD1E4, 0xD210, 0xD23C, 0xD268]
+                ],
+            ),
+            "opponent_pkm_level": (
+                None,
+                [
+                    self.pyboy.get_memory_value(0xCFF3),
+                ],
+            ),
+            # "pkm_xp": (
+            #     [handle_xp_change_reward],
+            #     [
+            #         self.pyboy.get_memory_value(0xD17B),
+            #         self.pyboy.get_memory_value(0xD1A7),
+            #         self.pyboy.get_memory_value(0xD1D3),
+            #         self.pyboy.get_memory_value(0xD1FF),
+            #         self.pyboy.get_memory_value(0xD22B),
+            #         self.pyboy.get_memory_value(0xD257),
+            #     ],
+            # ),
+            # "opponent_pkm_hp": (
+            #     [handle_opponent_hp_change_reward],
+            #     [
+            #         self.pyboy.get_memory_value(0xCFE7),
+            #     ],
+            # ),
         }
 
     def _handle_long_term_memory_observation(self):
