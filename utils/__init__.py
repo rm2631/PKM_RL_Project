@@ -7,3 +7,11 @@ def create_env(render_mode=None, **options):
     seed = random.getrandbits(128)
     env.reset(seed=seed)
     return env
+
+
+def print_section(text):
+    print("" * 80)
+    print("=" * 80)
+    print(text)
+    print("=" * 80)
+    print("" * 80)

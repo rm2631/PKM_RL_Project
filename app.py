@@ -1,36 +1,27 @@
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback, ProgressBarCallback
-from utils import create_env
+from utils import create_env, print_section
 import os
 from datetime import datetime
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
 
-
-def print_section(text):
-    print("" * 80)
-    print("=" * 80)
-    print(text)
-    print("=" * 80)
-    print("" * 80)
-
-
 ## TEST
 
 num_envs = 1
-render_mode = "human"
 nb_episodes = 5
 timesteps_per_env = 100
+render_mode = "human"
 verbose = False
 
 
 ## TRAIN
 
-# num_envs = 12
+# num_envs = 12 ## nb of logical cores
+# nb_episodes = 250
+# timesteps_per_env = 5000
 # render_mode = None
-# nb_epochs = 250
-# timesteps_per_epoch = 5000
 # verbose = False
 
 
