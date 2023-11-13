@@ -3,3 +3,4 @@ screenshots/*
 trained
 rollouts
 *__pycache__*
+logs

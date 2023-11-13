@@ -52,8 +52,11 @@ class PKM_env(Env):
         for key, value in options.items():
             setattr(self, key, value)
 
-        ## PYBOY
+        ## ENV SETTINGS
+
+        ## PYBOY SETTINGS
         window_type = "headless" if render_mode != "human" else "SDL2"
+        self.init_state = True
         rom_name = "ROMs/Pokemon Red.gb"
         self.pyboy = PyBoy(
             rom_name,
@@ -92,7 +95,7 @@ class PKM_env(Env):
         if reward != 0:
             if self.verbose:
                 print(f"Reward ---- {reward}")
-                self._save_screen(obs, reward=reward)
+            self._save_screen(obs, reward=reward)
         terminated = False
         truncated = False
         info = {}
@@ -105,8 +108,12 @@ class PKM_env(Env):
     ):  # type: ignore
         super().reset(seed=seed, options=options)
         self.seed = seed
-        state_name = "ROMs/Pokemon Red.gb.state"
-        self.pyboy.load_state(open(state_name, "rb"))
+
+        if self.init_state:
+            state_name = "ROMs/Pokemon Red.gb.state"
+            self.pyboy.load_state(open(state_name, "rb"))
+            self.init_state = False
+
         obs = self._get_obs()
         info = {}
         return obs, info
