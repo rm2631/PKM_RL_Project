@@ -14,6 +14,7 @@ from utils.reward_functions import (
     handle_hp_change_reward,
     handle_downed_pokemon,
     handle_level_change,
+    handle_xp_change_reward,
 )
 from skimage.transform import resize
 import mediapy as media
@@ -86,9 +87,6 @@ class PKM_env(Env):
         self.total_rewards += reward
         self._handle_long_term_memory_observation()
         obs = self._get_obs()
-        if reward != 0:
-            if self.verbose:
-                print(f"Reward ---- {reward}")
         terminated = False
         truncated = False
         info = {}
@@ -220,10 +218,22 @@ class PKM_env(Env):
                 ],
             ),
             "party_level": (
-                [handle_level_change],
+                # [handle_level_change],
+                None,
                 [
                     self.pyboy.get_memory_value(i)
                     for i in [0xD18C, 0xD1B8, 0xD1E4, 0xD210, 0xD23C, 0xD268]
+                ],
+            ),
+            "pkm_xp": (
+                [handle_xp_change_reward],
+                [
+                    self.pyboy.get_memory_value(0xD17B),
+                    self.pyboy.get_memory_value(0xD1A7),
+                    self.pyboy.get_memory_value(0xD1D3),
+                    self.pyboy.get_memory_value(0xD1FF),
+                    self.pyboy.get_memory_value(0xD22B),
+                    self.pyboy.get_memory_value(0xD257),
                 ],
             ),
             "opponent_pkm_level": (
@@ -232,23 +242,12 @@ class PKM_env(Env):
                     self.pyboy.get_memory_value(0xCFF3),
                 ],
             ),
-            # "pkm_xp": (
-            #     [handle_xp_change_reward],
-            #     [
-            #         self.pyboy.get_memory_value(0xD17B),
-            #         self.pyboy.get_memory_value(0xD1A7),
-            #         self.pyboy.get_memory_value(0xD1D3),
-            #         self.pyboy.get_memory_value(0xD1FF),
-            #         self.pyboy.get_memory_value(0xD22B),
-            #         self.pyboy.get_memory_value(0xD257),
-            #     ],
-            # ),
-            # "opponent_pkm_hp": (
-            #     [handle_opponent_hp_change_reward],
-            #     [
-            #         self.pyboy.get_memory_value(0xCFE7),
-            #     ],
-            # ),
+            "opponent_pkm_hp": (
+                None,
+                [
+                    self.pyboy.get_memory_value(0xCFE7),
+                ],
+            ),
         }
 
     def _handle_long_term_memory_observation(self):
@@ -289,10 +288,14 @@ class PKM_env(Env):
         # Find the minimum distance
         if len(distances) == 0:
             self.location_memory = np.vstack((self.location_memory, location_array))
+            if self.verbose:
+                print("New location")
             return 1
         min_distance = distances.min()
-        if min_distance > 5:
+        if min_distance > 2:
             self.location_memory = np.vstack((self.location_memory, location_array))
+            if self.verbose:
+                print("New location")
             return 1  # positive reward for moving to a new location
         return 0
 
@@ -311,7 +314,9 @@ class PKM_env(Env):
             if previous_memory_value is None:
                 continue
             for func in curr_reward_function:
-                reward += func(current_memory_value, previous_memory_value)
+                reward += func(
+                    current_memory_value, previous_memory_value, verbose=self.verbose
+                )
         return reward
 
     def _append_new_observation_to_memory(self):

@@ -1,36 +1,37 @@
+import os
+from datetime import datetime
+from utils import create_env, print_section
+from utils.LoggingCallback import TensorboardCallback
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback, ProgressBarCallback
-from utils import create_env, print_section
-import os
-from datetime import datetime
-
-from utils.LoggingCallback import TensorboardCallback
 
 # from stable_baselines3.common.vec_env import VecMonitor
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
 
 ################
-TEST = False
+TEST = True
 ################
 
-num_envs = 12  ## nb of logical cores
-nb_episodes = 130
-timesteps_per_env = 10000
+TOTAL_TIMESTEPS_TO_ACHIEVE = (
+    7800000  ## This is the target for about 8 hours of training
+)
+
+num_envs = 10  ## nb of logical cores
+timesteps_per_env = 1000
+nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
 render_mode = None
 verbose = False
 save_model = True
 log_type = "train"
-# 12 envs, 10000 timesteps per env, 130 episodes = around 8 hours of training
 
 
 if TEST:
     num_envs = 5
-    nb_episodes = 10
-    timesteps_per_env = 100
+    timesteps_per_env = 1000
+    nb_episodes = 50
     render_mode = "human"
-    verbose = False
+    verbose = True
     save_model = False
     log_type = "test"
 
@@ -38,7 +39,13 @@ if TEST:
 timesteps = num_envs * timesteps_per_env
 
 
+def calc_required_space():
+    REQ_SPACE = num_envs * timesteps_per_env * (3 * 72) * 80 * 3 * 4
+    print(f"Required space: {REQ_SPACE} B")
+
+
 def main():
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
     run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_path = f"./logs/{log_type}/{run_id}"
 
@@ -98,3 +105,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # calc_required_space()

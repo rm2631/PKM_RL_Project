@@ -82,7 +82,9 @@ def _calculate_reward_allocation(
     return reward_list
 
 
-def handle_hp_change_reward(current_value: [int], previous_value: [int]):
+def handle_hp_change_reward(
+    current_value: [int], previous_value: [int], verbose: bool = False
+):
     """
     Reward function for handling hp change
     """
@@ -90,21 +92,31 @@ def handle_hp_change_reward(current_value: [int], previous_value: [int]):
         _skewed_rewards, current_value, previous_value, 0, 1, 10
     )
     reward = sum(reward_list)
+    if verbose:
+        print(f"HP Change Reward: {reward}")
     return reward
 
 
-# def handle_xp_change_reward(current_value: [int], previous_value: [int]):
-#     """
-#     Reward function for handling xp change
-#     """
-#     reward_list = _calculate_reward_allocation(
-#         _skewed_rewards, current_value, previous_value, 0, 1, 10
-#     )
-#     reward = sum(reward_list)
-#     return reward
+def handle_xp_change_reward(
+    current_value: [int], previous_value: [int], verbose: bool = False
+):
+    """
+    Reward function for handling xp change
+    """
+    # reward_list = _calculate_reward_allocation(
+    #     _skewed_rewards, current_value, previous_value, 0, 1, 10
+    # )
+    # reward = sum(reward_list)
+    # return reward
+
+    if sum(current_value) > sum(previous_value):
+        if verbose:
+            print(f"XP Change Reward: {1}")
+        return 1
+    return 0
 
 
-# def handle_opponent_hp_change_reward(current_value: [int], previous_value: [int]):
+# def handle_opponent_hp_change_reward(current_value: [int], previous_value: [int], verbose: bool = False):
 #     """
 #     Reward function for handling opponent hp change
 #     """
@@ -121,7 +133,9 @@ def handle_hp_change_reward(current_value: [int], previous_value: [int]):
 #     return reward
 
 
-def handle_downed_pokemon(current_value: [int], previous_value: [int]):
+def handle_downed_pokemon(
+    current_value: [int], previous_value: [int], verbose: bool = False
+):
     """
     Reward function for handling downed pokemon
     """
@@ -135,38 +149,44 @@ def handle_downed_pokemon(current_value: [int], previous_value: [int]):
     if reward != 0:
         ## If the reward is not 0, we want to make sure that the reward is not too big to avoid traumas
         reward = max(reward, -1)
+        if verbose:
+            print(f"Downed Pokemon Reward: {reward}")
     return reward
 
 
-def handle_level_change(current_value: [int], previous_value: [int]):
+def handle_level_change(
+    current_value: [int], previous_value: [int], verbose: bool = False
+):
     """
     Reward function for handling level change
     """
     for current_value, previous_value in zip(current_value, previous_value):
         if current_value > previous_value:
+            if verbose:
+                print(f"Level Change Reward: {1}")
             return 1
     return 0
 
 
-if __name__ == "__main__":
-    lower_bound = 0
-    upper_bound = 5
-    nb_bins = 20
+# if __name__ == "__main__":
+#     lower_bound = 0
+#     upper_bound = 5
+#     nb_bins = 20
 
-    for function in [_skewed_rewards]:
-        for reward_negative_values in [False, True]:
-            lower_thresholds, rewards = zip(
-                *function(
-                    lower_bound,
-                    upper_bound,
-                    nb_bins,
-                    reward_negative_values=reward_negative_values,
-                )
-            )
+#     for function in [_skewed_rewards]:
+#         for reward_negative_values in [False, True]:
+#             lower_thresholds, rewards = zip(
+#                 *function(
+#                     lower_bound,
+#                     upper_bound,
+#                     nb_bins,
+#                     reward_negative_values=reward_negative_values,
+#                 )
+#             )
 
-            plt.plot(lower_thresholds, rewards, marker="o", linestyle="-")
-            plt.title("Skewed Reward Allocations")
-            plt.xlabel("Lower Threshold")
-            plt.ylabel("Reward")
-            plt.grid(True)
-            plt.show()
+#             plt.plot(lower_thresholds, rewards, marker="o", linestyle="-")
+#             plt.title("Skewed Reward Allocations")
+#             plt.xlabel("Lower Threshold")
+#             plt.ylabel("Reward")
+#             plt.grid(True)
+#             plt.show()
