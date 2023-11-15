@@ -4,3 +4,4 @@ trained
 rollouts
 *__pycache__*
 logs
+hist

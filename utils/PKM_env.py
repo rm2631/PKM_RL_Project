@@ -9,7 +9,7 @@ from skimage.metrics import mean_squared_error
 import os
 import pyboy.openai_gym as gym
 import random
-from utils.numpy_array_to_image_and_save import numpy_array_to_image_and_save
+from utils.numpy_array_to_image_and_save import numpy_array_to_image
 from utils.reward_functions import (
     handle_hp_change_reward,
     handle_downed_pokemon,
@@ -41,6 +41,7 @@ class PKM_env(Env):
             setattr(self, key, value)
 
         ## ENV SETTINGS
+        self.total_rewards = 0
 
         ## PYBOY SETTINGS
         window_type = "headless" if render_mode != "human" else "SDL2"
@@ -52,7 +53,11 @@ class PKM_env(Env):
         )
         self.pyboy.set_emulation_speed(5)
         self.screen = self.pyboy.botsupport_manager().screen()
-        self.screen_shape = (72, 80, 3)  ## Half the size of the PyBoy screen
+        self.screen_shape = (
+            72,
+            80,
+            3,
+        )  ## Half the size of the PyBoy screen for better training performance
 
         ## OBS
         self.long_term_memory_obs = np.zeros(self.screen_shape)
@@ -78,12 +83,12 @@ class PKM_env(Env):
     def step(self, action):
         self._send_command(action)
         reward = self._handle_reward()
+        self.total_rewards += reward
         self._handle_long_term_memory_observation()
         obs = self._get_obs()
         if reward != 0:
             if self.verbose:
                 print(f"Reward ---- {reward}")
-            self._save_screen(obs, reward=reward)
         terminated = False
         truncated = False
         info = {}
@@ -107,8 +112,10 @@ class PKM_env(Env):
         return obs, info
 
     def render(self):
-        if self.render_mode == "human":
-            return None
+        # if self.render_mode == "human":
+        #     return None
+        obs = self._get_obs()
+        return obs
 
     def close(self):
         self.pyboy.stop()
@@ -378,10 +385,6 @@ class PKM_env(Env):
         chat = obs[-chat_size:, :, :]
         return chat
 
-    def _save_screen(self, obs, reward=0):
-        now = datetime.now()
-        day_string = now.strftime("%d-%m-%Y")
-        directory = f"screenshots/{day_string}/{self.instance}"
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        numpy_array_to_image_and_save(obs, f"{directory}", additional_info=reward)
+    def _get_screen(self, obs):
+        image = numpy_array_to_image(obs)
+        return image
