@@ -27,7 +27,7 @@ log_type = "train"
 
 
 if TEST:
-    num_envs = 5
+    num_envs = 2
     timesteps_per_env = 1000
     nb_episodes = 50
     render_mode = "human"
@@ -50,21 +50,21 @@ def main():
     log_path = f"./logs/{log_type}/{run_id}"
 
     save_path = "trained/PKM"
-    options = {
-        "evaluate_rewards": True,
+    configs = {
+        "rom_path": "ROMs/Pokemon Red.gb",
+        "render_mode": render_mode,
+        "emulation_speed": 5,
         "verbose": verbose,
     }
 
     env = SubprocVecEnv(
         [
             lambda: create_env(
-                render_mode=render_mode,
-                **options,
+                **configs,
             )
             for _ in range(num_envs)
         ]
     )
-    # env = VecMonitor(env, log_path)
 
     model_params = dict(
         env=env,
@@ -78,7 +78,7 @@ def main():
         model = PPO.load(save_path, **model_params)
     else:
         model = PPO(
-            "CnnPolicy",
+            "MultiInputPolicy",
             **model_params,
         )
 
@@ -92,7 +92,7 @@ def main():
             tb_log_name=f"Episode_{episode}",
             callback=[
                 TensorboardCallback(),
-                ProgressBarCallback(),
+                # ProgressBarCallback(),
             ],
         )
         if episode % 4 == 0:

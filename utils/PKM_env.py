@@ -100,10 +100,10 @@ class PKM_env(Env):
         super().reset(seed=seed, options=options)
         self.seed = seed
 
-        if self.init_state:
-            state_name = "ROMs/Pokemon Red.gb.state"
-            self.pyboy.load_state(open(state_name, "rb"))
-            self.init_state = False
+        # if self.init_state:
+        state_name = "ROMs/Pokemon Red.gb.state"
+        self.pyboy.load_state(open(state_name, "rb"))
+        self.init_state = False
 
         obs = self._get_obs()
         info = {}

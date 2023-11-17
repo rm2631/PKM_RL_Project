@@ -89,7 +89,7 @@ def handle_hp_change_reward(
     Reward function for handling hp change
     """
     reward_list = _calculate_reward_allocation(
-        _skewed_rewards, current_value, previous_value, 0, 1, 10
+        _skewed_rewards, current_value, previous_value, 0, 2, 10
     )
     reward = sum(reward_list)
     if verbose:
@@ -103,16 +103,45 @@ def handle_xp_change_reward(
     """
     Reward function for handling xp change
     """
-    # reward_list = _calculate_reward_allocation(
-    #     _skewed_rewards, current_value, previous_value, 0, 1, 10
-    # )
-    # reward = sum(reward_list)
-    # return reward
+    reward_list = _calculate_reward_allocation(
+        _skewed_rewards, current_value, previous_value, 0, 2, 10
+    )
+    reward = sum(reward_list)
+    return reward
 
-    if sum(current_value) > sum(previous_value):
+
+def handle_downed_pokemon(
+    current_value: [int], previous_value: [int], verbose: bool = False
+):
+    """
+    Reward function for handling downed pokemon
+    """
+    downed_pokemon_reward = -1
+    reward_list = []
+    for current_value, previous_value in zip(current_value, previous_value):
+        if current_value == 0 and previous_value > 0:
+            reward_list.append(downed_pokemon_reward)
+    reward = sum(reward_list)
+
+    if reward != 0:
+        ## If the reward is not 0, we want to make sure that the reward is not too big to avoid traumas
+        reward = max(reward, -0.1)
         if verbose:
-            print(f"XP Change Reward: {1}")
-        return 1
+            print(f"Downed Pokemon Reward: {reward}")
+    return reward
+
+
+def handle_level_change(
+    current_value: [int], previous_value: [int], verbose: bool = False
+):
+    """
+    Reward function for handling level change
+    """
+    for current_value, previous_value in zip(current_value, previous_value):
+        if current_value > previous_value:
+            if verbose:
+                print(f"Level Change Reward: {1}")
+            return 1
     return 0
 
 
@@ -131,41 +160,6 @@ def handle_xp_change_reward(
 #     )
 #     reward = sum(reward_list)
 #     return reward
-
-
-def handle_downed_pokemon(
-    current_value: [int], previous_value: [int], verbose: bool = False
-):
-    """
-    Reward function for handling downed pokemon
-    """
-    downed_pokemon_reward = -1
-    reward_list = []
-    for current_value, previous_value in zip(current_value, previous_value):
-        if current_value == 0 and previous_value > 0:
-            reward_list.append(downed_pokemon_reward)
-    reward = sum(reward_list)
-
-    if reward != 0:
-        ## If the reward is not 0, we want to make sure that the reward is not too big to avoid traumas
-        reward = max(reward, -1)
-        if verbose:
-            print(f"Downed Pokemon Reward: {reward}")
-    return reward
-
-
-def handle_level_change(
-    current_value: [int], previous_value: [int], verbose: bool = False
-):
-    """
-    Reward function for handling level change
-    """
-    for current_value, previous_value in zip(current_value, previous_value):
-        if current_value > previous_value:
-            if verbose:
-                print(f"Level Change Reward: {1}")
-            return 1
-    return 0
 
 
 # if __name__ == "__main__":

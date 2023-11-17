@@ -1,9 +1,10 @@
 import random
 from utils.PKM_env import PKM_env
+from utils.PkmEnv2 import PkmEnv
 
 
-def create_env(render_mode=None, **options):
-    env = PKM_env(render_mode=render_mode, **options)
+def create_env(**configs):
+    env = PkmEnv(**configs)
     seed = random.getrandbits(128)
     env.reset(seed=seed)
     return env
