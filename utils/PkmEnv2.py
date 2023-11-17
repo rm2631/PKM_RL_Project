@@ -70,8 +70,8 @@ class PkmEnv(gym.Env):
 
     def step(self, action):
         self._run_action(action)
-        reward = self._handle_reward()
         observation = self._get_obs()
+        reward = self._handle_reward()
         terminated = False
         truncated = self._get_truncate_status()
         # truncated = False  ##TODO: remove this
@@ -90,7 +90,7 @@ class PkmEnv(gym.Env):
             reset_attributes = [
                 "progress_counter",
                 "screen_history",
-                "total_rewards",
+                # "total_rewards", ##Commented out to keep track of total rewards over time
                 "previous_position",
             ]
             for attribute in reset_attributes:
@@ -197,7 +197,7 @@ class PkmEnv(gym.Env):
 
     def _handle_reward(self):
         self.step_reward = dict(
-            position=self._handle_position_reward(),
+            position=self._handle_position_reward() * 0.1,
         )
 
         ## Sum all rewards

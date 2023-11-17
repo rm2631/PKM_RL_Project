@@ -10,7 +10,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, ProgressBarCa
 
 
 ################
-TEST = True
+TEST = False
 ################
 
 TOTAL_TIMESTEPS_TO_ACHIEVE = (
@@ -55,6 +55,7 @@ def main():
         "render_mode": render_mode,
         "emulation_speed": 5,
         "verbose": verbose,
+        "max_progress_without_reward": 10000,
     }
 
     env = SubprocVecEnv(
@@ -91,7 +92,7 @@ def main():
             reset_num_timesteps=False,
             tb_log_name=f"Episode_{episode}",
             callback=[
-                TensorboardCallback(),
+                # TensorboardCallback(),
                 # ProgressBarCallback(),
             ],
         )
