@@ -53,18 +53,18 @@ class PkmEnv(gym.Env):
         self.position_history_size = 20
         self.observation_space = spaces.Dict(
             {
-                "screen": spaces.Box(
-                    low=0, high=255, shape=self.stacked_screen_size, dtype=np.uint8
-                ),
                 "position": spaces.Box(low=0, high=255, shape=(3,), dtype=np.uint8),
-                "position_history": spaces.Box(
-                    low=0,
-                    high=255,
-                    shape=(3, self.position_history_size),
-                    dtype=np.uint8,
-                ),
             }
         )
+        # "screen": spaces.Box(
+        #     low=0, high=255, shape=self.stacked_screen_size, dtype=np.uint8
+        # ),
+        # "position_history": spaces.Box(
+        #     low=0,
+        #     high=255,
+        #     shape=(3, self.position_history_size),
+        #     dtype=np.uint8,
+        # ),
 
         ## Pyboy
         window_type = "headless" if configs["render_mode"] != "human" else "SDL2"
@@ -139,11 +139,11 @@ class PkmEnv(gym.Env):
     ## Observation functions
 
     def _get_obs(self):
-        observation = dict(
-            screen=self._get_screen_stack(),
-            position=self._get_current_position_obs(),
-            position_history=self._get_previous_position_obs(),
-        )
+        observation = {
+            # "screen": self._get_screen(),
+            "position": self._get_current_position_obs(),
+            # "position_history": self._get_previous_position_obs(),
+        }
         return observation
 
     def _get_screen(self):
@@ -157,7 +157,7 @@ class PkmEnv(gym.Env):
         if not hasattr(self, "screen_history"):
             ## create it and fill it with nb_stacked_screens zeros
             self.screen_history = [
-                np.zeros(self.single_screen_size, dtype=np.uint8)
+                np.empty(self.single_screen_size, dtype=np.uint8)
                 for _ in range(self.nb_stacked_screens)
             ]
         ## add the current screen to the history
@@ -245,6 +245,8 @@ class PkmEnv(gym.Env):
         current_position = np.array([Y, X, M])
         self.current_position = current_position
 
+        if not hasattr(self, "previous_position"):
+            self.previous_position = []
         previous_position = self.previous_position
         if len(previous_position) == 0:
             self.previous_position.append(current_position)

@@ -97,7 +97,7 @@ def main():
             tb_log_name=f"Episode_{episode}",
             callback=[
                 # TensorboardCallback(),
-                ProgressBarCallback(),
+                # ProgressBarCallback(),
             ],
         )
         if episode % 4 == 0:
