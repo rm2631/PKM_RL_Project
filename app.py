@@ -10,8 +10,12 @@ from stable_baselines3.common.callbacks import CheckpointCallback, ProgressBarCa
 
 
 ################
-TEST = False
+TEST = True
 ################
+
+TOTAL_TIMESTEPS_TO_ACHIEVE = (
+    7800000  ## This is the target for about 8 hours of training
+)
 
 TOTAL_TIMESTEPS_TO_ACHIEVE = (
     7800000  ## This is the target for about 8 hours of training
@@ -93,7 +97,7 @@ def main():
             tb_log_name=f"Episode_{episode}",
             callback=[
                 # TensorboardCallback(),
-                # ProgressBarCallback(),
+                ProgressBarCallback(),
             ],
         )
         if episode % 4 == 0:

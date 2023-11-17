@@ -24,6 +24,7 @@ class PkmEnv(gym.Env):
         required_configs = ["rom_path", "render_mode", "emulation_speed"]
         for config in required_configs:
             assert config in configs, f"Missing {config} in configs"
+        self.init_state = True
 
         ### Action space
         self.command_map = {
@@ -49,11 +50,19 @@ class PkmEnv(gym.Env):
             self.single_screen_size[2],
         )
 
+        self.position_history_size = 20
         self.observation_space = spaces.Dict(
             {
                 "screen": spaces.Box(
                     low=0, high=255, shape=self.stacked_screen_size, dtype=np.uint8
-                )
+                ),
+                "position": spaces.Box(low=0, high=255, shape=(3,), dtype=np.uint8),
+                "position_history": spaces.Box(
+                    low=0,
+                    high=255,
+                    shape=(3, self.position_history_size),
+                    dtype=np.uint8,
+                ),
             }
         )
 
@@ -70,8 +79,8 @@ class PkmEnv(gym.Env):
 
     def step(self, action):
         self._run_action(action)
-        observation = self._get_obs()
         reward = self._handle_reward()
+        observation = self._get_obs()
         terminated = False
         truncated = self._get_truncate_status()
         # truncated = False  ##TODO: remove this
@@ -80,11 +89,6 @@ class PkmEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         self.seed = seed
-
-        self.init_state = (
-            True  ##TODO: change this value to true as part of the truncation process
-        )
-
         if self.init_state:
             self.init_state = False
             reset_attributes = [
@@ -132,15 +136,15 @@ class PkmEnv(gym.Env):
                     self.pyboy._rendering(False)
                 self.pyboy.tick()
 
+    ## Observation functions
+
     def _get_obs(self):
         observation = dict(
             screen=self._get_screen_stack(),
+            position=self._get_current_position_obs(),
+            position_history=self._get_previous_position_obs(),
         )
         return observation
-
-    def _get_info(self):
-        info = dict()
-        return info
 
     def _get_screen(self):
         screen = self.screen.screen_ndarray()
@@ -170,6 +174,32 @@ class PkmEnv(gym.Env):
 
         return screen_stack
 
+    def _get_current_position_obs(self):
+        if not hasattr(self, "current_position"):
+            self.current_position = np.array([0, 0, 0])
+        observation = self.current_position
+        return observation
+
+    def _get_previous_position_obs(self):
+        if not hasattr(self, "previous_position"):
+            self.previous_position = []
+        observation = self.previous_position[-self.position_history_size :]
+        ## Fill with zeros if not enough positions
+        if len(observation) < self.position_history_size:
+            nb_of_padded_positions = self.position_history_size - len(observation)
+            [
+                observation.append(np.zeros((3), dtype=np.uint8).T)
+                for _ in range(nb_of_padded_positions)
+            ]
+        observation = np.array(observation)
+        return observation
+
+    ## Info functions
+
+    def _get_info(self):
+        info = dict()
+        return info
+
     ## Reward functions
 
     def print_reward(func):
@@ -193,7 +223,6 @@ class PkmEnv(gym.Env):
             self.progress_counter += 1
         else:
             self.progress_counter = 0
-        print(f"Progress counter: {self.progress_counter}")  ##TODO: remove this
 
     def _handle_reward(self):
         self.step_reward = dict(
@@ -214,21 +243,24 @@ class PkmEnv(gym.Env):
         X = self.pyboy.get_memory_value(0xD362)
         M = self.pyboy.get_memory_value(0xD35E)
         current_position = np.array([Y, X, M])
-        if not hasattr(self, "previous_position"):
-            self.previous_position = []
-        self.previous_position.append(current_position)
-        ## Calculate reward
-        if len(self.previous_position) <= 1:
+        self.current_position = current_position
+
+        previous_position = self.previous_position
+        if len(previous_position) == 0:
+            self.previous_position.append(current_position)
             return 1
-        ## Filter positions that share same last coordinate
-        filtered_positions = [
-            pos for pos in self.previous_position if pos[2] == current_position[2]
-        ]
-        ## Calculate distance between last two positions
-        distances = np.linalg.norm(filtered_positions - current_position, axis=1)
-        if distances.min() > 2:
-            return 1
-        ## If all else fails, return 0
+
+        else:
+            ## Filter positions that share same last coordinate
+            filtered_positions = [
+                pos for pos in self.previous_position if pos[2] == current_position[2]
+            ]
+            ## Calculate distance between last two positions
+            distances = np.linalg.norm(filtered_positions - current_position, axis=1)
+            if distances.min() > 2:
+                self.previous_position.append(current_position)
+                return 1
+            ## If all else fails, return 0
         return 0
 
     ## Info functions
