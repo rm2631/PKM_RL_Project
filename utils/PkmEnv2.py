@@ -53,18 +53,21 @@ class PkmEnv(gym.Env):
         self.position_history_size = 20
         self.observation_space = spaces.Dict(
             {
+                "screen": spaces.Box(
+                    low=0, high=255, shape=self.stacked_screen_size, dtype=np.uint8
+                ),
                 "position": spaces.Box(low=0, high=255, shape=(3,), dtype=np.uint8),
+                "position_history": spaces.Box(
+                    low=0,
+                    high=255,
+                    shape=(3, self.position_history_size),
+                    dtype=np.uint8,
+                ),
+                "party_stats": spaces.Box(
+                    low=0, high=255, shape=(6, 3), dtype=np.uint8
+                ),
             }
         )
-        # "screen": spaces.Box(
-        #     low=0, high=255, shape=self.stacked_screen_size, dtype=np.uint8
-        # ),
-        # "position_history": spaces.Box(
-        #     low=0,
-        #     high=255,
-        #     shape=(3, self.position_history_size),
-        #     dtype=np.uint8,
-        # ),
 
         ## Pyboy
         window_type = "headless" if configs["render_mode"] != "human" else "SDL2"
@@ -140,9 +143,10 @@ class PkmEnv(gym.Env):
 
     def _get_obs(self):
         observation = {
-            # "screen": self._get_screen(),
+            "screen": self._get_screen_stack(),
             "position": self._get_current_position_obs(),
-            # "position_history": self._get_previous_position_obs(),
+            "position_history": self._get_previous_position_obs(),
+            "party_stats": self._get_party_stats_obs(),
         }
         return observation
 
@@ -157,7 +161,7 @@ class PkmEnv(gym.Env):
         if not hasattr(self, "screen_history"):
             ## create it and fill it with nb_stacked_screens zeros
             self.screen_history = [
-                np.empty(self.single_screen_size, dtype=np.uint8)
+                np.zeros(self.single_screen_size, dtype=np.uint8)
                 for _ in range(self.nb_stacked_screens)
             ]
         ## add the current screen to the history
@@ -176,7 +180,7 @@ class PkmEnv(gym.Env):
 
     def _get_current_position_obs(self):
         if not hasattr(self, "current_position"):
-            self.current_position = np.array([0, 0, 0])
+            self.current_position = np.zeros((3), dtype=np.uint8)
         observation = self.current_position
         return observation
 
@@ -193,6 +197,20 @@ class PkmEnv(gym.Env):
             ]
         observation = np.array(observation)
         return observation
+
+    def _get_party_stats_obs(self):
+        self.party_level = [
+            self.pyboy.get_memory_value(i)
+            for i in [0xD18C, 0xD1B8, 0xD1E4, 0xD210, 0xD23C, 0xD268]
+        ]
+        if not hasattr(self, "current_party_xp"):
+            self.current_party_xp = [0 for _ in range(6)]
+        if not hasattr(self, "previous_party_xp"):
+            self.previous_party_xp = [0 for _ in range(6)]
+        ## stack all party information
+        observation = np.array(
+            [self.party_level, self.current_party_xp, self.previous_party_xp]
+        ).T
 
     ## Info functions
 
@@ -227,6 +245,7 @@ class PkmEnv(gym.Env):
     def _handle_reward(self):
         self.step_reward = dict(
             position=self._handle_position_reward() * 0.1,
+            xp_gain=self._handle_xp_reward() * 0.3,
         )
 
         ## Sum all rewards
@@ -258,12 +277,36 @@ class PkmEnv(gym.Env):
                 pos for pos in self.previous_position if pos[2] == current_position[2]
             ]
             ## Calculate distance between last two positions
+            if len(filtered_positions) == 0:
+                self.previous_position.append(current_position)
+                return 1
             distances = np.linalg.norm(filtered_positions - current_position, axis=1)
             if distances.min() > 2:
                 self.previous_position.append(current_position)
                 return 1
             ## If all else fails, return 0
         return 0
+
+    @print_reward
+    def _handle_xp_reward(self):
+        party_xp_memory_address = [0xD17B, 0xD1A7, 0xD1D3, 0xD1FF, 0xD22B, 0xD257]
+        if hasattr(self, "current_party_xp"):
+            self.previous_party_xp = self.current_party_xp  ## Update previous party xp
+        else:
+            self.previous_party_xp = [0 for _ in range(6)]
+        self.current_party_xp = [
+            self.pyboy.get_memory_value(address) for address in party_xp_memory_address
+        ]
+        xp_gain = [
+            (current - previous) / previous if previous != 0 else 0
+            for current, previous in zip(self.current_party_xp, self.previous_party_xp)
+        ]
+        ## Reward 1 for level up and 0.1 for xp gain above 10%
+        xp_gain = [
+            1 if xp_gain < 0 else 0.1 if xp_gain > 0.1 else 0 for xp_gain in xp_gain
+        ]
+        reward = sum(xp_gain)
+        return reward
 
     ## Info functions
 

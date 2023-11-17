@@ -17,12 +17,8 @@ TOTAL_TIMESTEPS_TO_ACHIEVE = (
     7800000  ## This is the target for about 8 hours of training
 )
 
-TOTAL_TIMESTEPS_TO_ACHIEVE = (
-    7800000  ## This is the target for about 8 hours of training
-)
-
 num_envs = 10  ## nb of logical cores
-timesteps_per_env = 1000
+timesteps_per_env = 10000 ## nb of timesteps per logical core
 nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
 render_mode = None
 verbose = False
@@ -97,7 +93,7 @@ def main():
             tb_log_name=f"Episode_{episode}",
             callback=[
                 # TensorboardCallback(),
-                # ProgressBarCallback(),
+                ProgressBarCallback(),
             ],
         )
         if episode % 4 == 0:
