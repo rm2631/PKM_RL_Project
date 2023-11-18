@@ -5,7 +5,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback, ProgressBarCallback
 import wandb
-from utils.PkmEnv2 import PkmEnv
+from utils.PkmEnv import PkmEnv
 import random
 
 
