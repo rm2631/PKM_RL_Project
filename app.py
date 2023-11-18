@@ -18,7 +18,7 @@ TOTAL_TIMESTEPS_TO_ACHIEVE = (
 )
 
 num_envs = 10  ## nb of logical cores
-timesteps_per_env = 10000 ## nb of timesteps per logical core
+timesteps_per_env = 5000  ## nb of timesteps per logical core
 nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
 render_mode = None
 verbose = False
@@ -86,7 +86,7 @@ def main():
     if TEST:
         print_section("STARTING TEST")
     for episode in range(nb_episodes):
-        print_section(f"Starting Episode {episode}")
+        print_section(f"Starting Episode {episode} of {nb_episodes}")
         model.learn(
             timesteps,
             reset_num_timesteps=False,

@@ -195,7 +195,7 @@ class PkmEnv(gym.Env):
                 observation.append(np.zeros((3), dtype=np.uint8).T)
                 for _ in range(nb_of_padded_positions)
             ]
-        observation = np.array(observation)
+        observation = np.array(observation).T
         return observation
 
     def _get_party_stats_obs(self):
@@ -211,6 +211,7 @@ class PkmEnv(gym.Env):
         observation = np.array(
             [self.party_level, self.current_party_xp, self.previous_party_xp]
         ).T
+        return observation
 
     ## Info functions
 
