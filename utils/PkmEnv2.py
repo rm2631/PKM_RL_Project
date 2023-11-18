@@ -246,7 +246,7 @@ class PkmEnv(gym.Env):
     def _handle_reward(self):
         self.step_reward = dict(
             position=self._handle_position_reward() * 0.1,
-            xp_gain=self._handle_xp_reward() * 0.3,
+            xp_gain=self._handle_xp_reward() * 0.5,
         )
 
         ## Sum all rewards
@@ -304,7 +304,7 @@ class PkmEnv(gym.Env):
         ]
         ## Reward 1 for level up and 0.1 for xp gain above 10%
         xp_gain = [
-            1 if xp_gain < 0 else 0.1 if xp_gain > 0.1 else 0 for xp_gain in xp_gain
+            1 if xp_gain < 0 else 0.5 if xp_gain > 0.1 else 0 for xp_gain in xp_gain
         ]
         reward = sum(xp_gain)
         return reward
