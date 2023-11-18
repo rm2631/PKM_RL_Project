@@ -245,7 +245,7 @@ class PkmEnv(gym.Env):
 
     def _handle_reward(self):
         self.step_reward = dict(
-            position=self._handle_position_reward() * 0.1,
+            position=self._handle_position_reward() * 0.05,
             xp_gain=self._handle_xp_reward() * 0.5,
         )
 
