@@ -37,10 +37,11 @@ class PkmEnv(gym.Env):
         }
         self.action_space = spaces.Discrete(len(self.command_map))
 
+        single_screen_size_downscale_ratio = 4
         ### Observation space
         self.single_screen_size = (
-            72,
-            80,
+            144 // single_screen_size_downscale_ratio,
+            160 // single_screen_size_downscale_ratio,
             3,
         )
         self.nb_stacked_screens = 3
@@ -267,6 +268,7 @@ class PkmEnv(gym.Env):
             position=self._handle_position_reward(),
             xp_gain=self._handle_xp_reward(),
             downed_pokemon=self._handle_downed_pokemon_reward(),
+            opponent_hp_loss=self.handle_opponent_hp_loss_reward(),
         )
 
         ## Sum all rewards
@@ -302,7 +304,7 @@ class PkmEnv(gym.Env):
                 self.previous_position.append(current_position)
                 return 1
             distances = np.linalg.norm(filtered_positions - current_position, axis=1)
-            if distances.min() > 2:
+            if distances.min() > 5:
                 self.previous_position.append(current_position)
                 return 1
             ## If all else fails, return 0
@@ -345,6 +347,25 @@ class PkmEnv(gym.Env):
         ]
         reward = -1 if any(downed_pokemon) else 0
         return reward
+
+    @log_reward(weight=0.2)
+    def handle_opponent_hp_loss_reward(self):
+        party_opponent_maximum_level_difference = 5
+
+        own_battle_pokemon_level = self.pyboy.get_memory_value(0xD022)
+        opp_battle_pokemon_level = self.pyboy.get_memory_value(0xCFF3)
+        if (
+            own_battle_pokemon_level - party_opponent_maximum_level_difference
+        ) <= opp_battle_pokemon_level:
+            if not hasattr(self, "opponent_hp"):
+                self.opponent_hp = 0
+            self.previous_opponent_hp = self.opponent_hp
+            self.opponent_hp = self.pyboy.get_memory_value(0xCFE7)
+            print("opponent_hp", self.opponent_hp)
+            print("previous_opponent_hp", self.previous_opponent_hp)
+            if self.opponent_hp < self.previous_opponent_hp:
+                return 1
+        return 0
 
     ## Info functions
 
