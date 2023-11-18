@@ -39,8 +39,8 @@ class PkmEnv(gym.Env):
 
         ### Observation space
         self.single_screen_size = (
-            36,
-            40,
+            72,
+            80,
             3,
         )
         self.nb_stacked_screens = 3
@@ -111,8 +111,8 @@ class PkmEnv(gym.Env):
         return observation, info  # reward, done, info can't be included
 
     def render(self, mode="human"):
-        screen_stack = self._get_screen_stack()
-        return screen_stack
+        screen_stack_array = self._get_previous_screens_array()
+        return screen_stack_array
 
     def close(self):
         pass
@@ -157,6 +157,10 @@ class PkmEnv(gym.Env):
         screen = resize(screen, self.single_screen_size, anti_aliasing=True)
         return screen
 
+    def _get_previous_screens_array(self):
+        screen_stack = np.concatenate(self.screen_history, axis=0)
+        return screen_stack
+
     def _get_screen_stack(self):
         ## if self.screen_history does not exist
         if not hasattr(self, "screen_history"):
@@ -175,9 +179,9 @@ class PkmEnv(gym.Env):
         self.screen_history = self.screen_history[-self.nb_stacked_screens :]
 
         ## Stack the screens
-        screen_stack = np.concatenate(self.screen_history, axis=0)
+        screen_stack_array = self._get_previous_screens_array()
 
-        return screen_stack
+        return screen_stack_array
 
     def _get_current_position_obs(self):
         if not hasattr(self, "current_position"):
@@ -217,6 +221,9 @@ class PkmEnv(gym.Env):
     ## Info functions
 
     def _get_info(self):
+        if not hasattr(self, "reward_memory"):
+            self.reward_memory = dict()
+
         info = dict(
             reward_memory=self.reward_memory,
         )
@@ -224,18 +231,21 @@ class PkmEnv(gym.Env):
 
     ## Reward functions
 
-    def print_reward(func, weight=1):
-        def wrapper(self):
-            reward = func(self)
-            reward = reward * weight
-            if reward != 0:
-                self.reward_memory[func.__name__] = reward
-                if self.configs["verbose"]:
-                    func_name = func.__name__
-                    print(f"---- {func_name}: {reward} ----")
-            return reward
+    def log_reward(weight=1):
+        def decorator(func):
+            def wrapper(self, *args, **kwargs):
+                reward = func(self)
+                reward = reward * weight
+                if reward != 0:
+                    self.reward_memory[func.__name__] = reward
+                    if self.configs["verbose"]:
+                        func_name = func.__name__
+                        print(f"---- {func_name}: {reward} ----")
+                return reward
 
-        return wrapper
+            return wrapper
+
+        return decorator
 
     def _update_game_state(self):
         pass
@@ -256,6 +266,7 @@ class PkmEnv(gym.Env):
         self.step_reward = dict(
             position=self._handle_position_reward(),
             xp_gain=self._handle_xp_reward(),
+            downed_pokemon=self._handle_downed_pokemon_reward(),
         )
 
         ## Sum all rewards
@@ -266,7 +277,7 @@ class PkmEnv(gym.Env):
         self._update_progress_counter(reward)
         return reward
 
-    @print_reward(weight=0.05)
+    @log_reward(weight=0.05)
     def _handle_position_reward(self):
         Y = self.pyboy.get_memory_value(0xD361)
         X = self.pyboy.get_memory_value(0xD362)
@@ -297,7 +308,7 @@ class PkmEnv(gym.Env):
             ## If all else fails, return 0
         return 0
 
-    @print_reward(weight=0.5)
+    @log_reward(weight=0.5)
     def _handle_xp_reward(self):
         party_xp_memory_address = [0xD17B, 0xD1A7, 0xD1D3, 0xD1FF, 0xD22B, 0xD257]
         if hasattr(self, "current_party_xp"):
@@ -318,6 +329,23 @@ class PkmEnv(gym.Env):
         reward = sum(xp_gain)
         return reward
 
+    @log_reward(weight=0.1)
+    def _handle_downed_pokemon_reward(self):
+        party_hp_memory_address = [0xD16D, 0xD199, 0xD1C5, 0xD1F1, 0xD21D, 0xD249]
+        if hasattr(self, "current_party_hp"):
+            self.previous_party_hp = self.current_party_hp
+        else:
+            self.previous_party_hp = [0 for _ in range(6)]
+        self.current_party_hp = [
+            self.pyboy.get_memory_value(address) for address in party_hp_memory_address
+        ]
+        downed_pokemon = [
+            True if current == 0 and previous != 0 else False
+            for current, previous in zip(self.current_party_hp, self.previous_party_hp)
+        ]
+        reward = -1 if any(downed_pokemon) else 0
+        return reward
+
     ## Info functions
 
     def _get_truncate_status(self):
@@ -326,7 +354,7 @@ class PkmEnv(gym.Env):
                 "progress_counter not found. Is this function called too early?"
             )
         max_progress_without_reward = (
-            self.configs.get("max_progress_without_reward") or 10000
+            self.configs.get("max_progress_without_reward") or 1000
         )
         if self.progress_counter >= max_progress_without_reward:
             self.init_state = True

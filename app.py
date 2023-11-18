@@ -1,50 +1,49 @@
 import os
 from datetime import datetime
-from utils import create_env, print_section
 from utils.LoggingCallback import TensorboardCallback
 from utils.WandbCallback import WandbCallback
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback, ProgressBarCallback
 import wandb
-
-# from stable_baselines3.common.vec_env import VecMonitor
-
-
-################
-TEST = True
-################
-
-TOTAL_TIMESTEPS_TO_ACHIEVE = (
-    7800000  ## This is the target for about 8 hours of training
-)
-
-num_envs = 10  ## nb of logical cores
-timesteps_per_env = 5000  ## nb of timesteps per logical core
-nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
-render_mode = None
-verbose = False
-save_model = True
-log_type = "train"
+from utils.PkmEnv2 import PkmEnv
+import random
 
 
-if TEST:
-    num_envs = 2
-    timesteps_per_env = 1000
-    nb_episodes = 50
-    render_mode = "human"
-    verbose = True
-    save_model = False
-    log_type = "test"
+def create_env(**configs):
+    env = PkmEnv(**configs)
+    seed = random.getrandbits(128)
+    env.reset(seed=seed)
+    return env
 
 
-timesteps = num_envs * timesteps_per_env
+def print_section(text):
+    print("" * 80)
+    print("=" * 80)
+    print(text)
+    print("=" * 80)
+    print("" * 80)
 
 
-def main():
+if __name__ == "__main__":
+    ################
+    TEST = True
+    TOTAL_TIMESTEPS_TO_ACHIEVE = (
+        7800000  ## This is the target for about 8 hours of training
+    )
+    ################
+
+    num_envs = 10 if not TEST else 2  ## Number of processes to use
+    timesteps_per_env = 5000 if not TEST else 1000  ## Number of timesteps per process
+    nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
+    render_mode = None if not TEST else "human"
+    verbose = False if not TEST else False
+    save_model = True if not TEST else False
+    log_type = "train" if not TEST else "test"
+
+    timesteps = num_envs * timesteps_per_env
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
     run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_path = f"./logs/{log_type}/{run_id}"
 
     save_path = "trained/PKM"
     configs = {
@@ -53,7 +52,18 @@ def main():
         "emulation_speed": 5,
         "verbose": verbose,
         "max_progress_without_reward": 10000,
+        "log_type": log_type,
+        "run_id": run_id,
     }
+
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="pokemon-rl",
+        # track hyperparameters and run metadata
+        config={
+            **configs,
+        },
+    )
 
     env = SubprocVecEnv(
         [
@@ -69,19 +79,6 @@ def main():
         device="cuda",
         n_steps=timesteps_per_env,
         batch_size=timesteps,
-    )
-
-    wandb.init(
-        # set the wandb project where this run will be logged
-        project="pokemon-rl",
-        # track hyperparameters and run metadata
-        config={
-            "num_envs": num_envs,
-            "timesteps_per_env": timesteps_per_env,
-            "nb_episodes": nb_episodes,
-            "log_type": log_type,
-            **model_params,
-        },
     )
 
     if os.path.isfile(f"{save_path}.zip"):
@@ -109,8 +106,4 @@ def main():
     if save_model:
         model.save(save_path)
     env.close()
-
-
-if __name__ == "__main__":
-    main()
-    # calc_required_space()
+    wandb.finish()

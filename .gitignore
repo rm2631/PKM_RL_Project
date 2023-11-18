@@ -5,3 +5,4 @@ rollouts
 *__pycache__*
 logs
 hist
+wandb

@@ -27,25 +27,26 @@ class WandbCallback(BaseCallback):
         if len(reward_index) != 0 or self.num_timesteps % 1000 == 0:
             wandb.log(
                 {
-                    "step reward": sum(step_rewards),
+                    # "step reward": sum(step_rewards),
                     "total reward": sum(total_rewards),
                     "average total reward": sum(total_rewards) / self.num_envs,
                 }
             )
+        for env_info in self.locals.get("infos"):
+            reward_memory = env_info.get("reward_memory")
+            if reward_memory is not None:
+                [wandb.log({key: value}) for key, value in reward_memory.items()]
 
-            # for env_index in reward_index:
-            #     ## Get the image from the environment
-            #     self.__log_images(env_index)
+            for env_index in reward_index:
+                ## Get the image from the environment
+                self.__log_images(env_index)
             # self.logger.dump(step=self.num_timesteps)
         return True
 
-    def __log_images(self, env_index):
+    def __log_images(self, env_index, caption="Screenshot"):
         try:
-            image = self.training_env.env_method("render")[env_index]
-            self.logger.record(
-                "trajectory/image",
-                Image(image, "HWC"),
-                exclude=("stdout", "log", "json", "csv"),
-            )
+            image_array = self.training_env.env_method("render")[env_index]
+            image = wandb.Image(image_array, caption=caption)
+            wandb.log({"screenshot": image})
         except:
             print("Error rendering image")
