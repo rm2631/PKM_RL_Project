@@ -37,18 +37,18 @@ class PkmEnv(gym.Env):
         }
         self.action_space = spaces.Discrete(len(self.command_map))
 
-        single_screen_size_downscale_ratio = 4
+        single_screen_size_downscale_ratio = 2
         ### Observation space
         self.single_screen_size = (
             144 // single_screen_size_downscale_ratio,
             160 // single_screen_size_downscale_ratio,
-            3,
+            1,
         )
         self.nb_stacked_screens = 3
         self.stacked_screen_size = (
-            self.single_screen_size[0] * self.nb_stacked_screens,
+            self.single_screen_size[0],
             self.single_screen_size[1],
-            self.single_screen_size[2],
+            self.single_screen_size[2] * self.nb_stacked_screens,
         )
 
         self.position_history_size = 20
@@ -112,8 +112,8 @@ class PkmEnv(gym.Env):
         return observation, info  # reward, done, info can't be included
 
     def render(self, mode="human"):
-        screen_stack_array = self._get_previous_screens_array()
-        return screen_stack_array
+        screen = self._get_screen()
+        return screen
 
     def close(self):
         pass
@@ -159,7 +159,7 @@ class PkmEnv(gym.Env):
         return screen
 
     def _get_previous_screens_array(self):
-        screen_stack = np.concatenate(self.screen_history, axis=0)
+        screen_stack = np.concatenate(self.screen_history, axis=2)
         return screen_stack
 
     def _get_screen_stack(self):
@@ -268,7 +268,7 @@ class PkmEnv(gym.Env):
             position=self._handle_position_reward(),
             xp_gain=self._handle_xp_reward(),
             downed_pokemon=self._handle_downed_pokemon_reward(),
-            opponent_hp_loss=self.handle_opponent_hp_loss_reward(),
+            opponent_hp_loss=self._handle_dealing_dmg_reward(),
         )
 
         ## Sum all rewards
@@ -348,23 +348,19 @@ class PkmEnv(gym.Env):
         reward = -1 if any(downed_pokemon) else 0
         return reward
 
-    @log_reward(weight=0.2)
-    def handle_opponent_hp_loss_reward(self):
-        party_opponent_maximum_level_difference = 5
-
-        own_battle_pokemon_level = self.pyboy.get_memory_value(0xD022)
-        opp_battle_pokemon_level = self.pyboy.get_memory_value(0xCFF3)
+    @log_reward(weight=0.01)
+    def _handle_dealing_dmg_reward(self):
+        if not hasattr(self, "current_opp_pkm_hp"):
+            self.previous_opp_pkm_hp = 0
+        else:
+            self.previous_opp_pkm_hp = self.current_opp_pkm_hp
+        self.current_opp_pkm_hp = self.pyboy.get_memory_value(0xCFE7)
         if (
-            own_battle_pokemon_level - party_opponent_maximum_level_difference
-        ) <= opp_battle_pokemon_level:
-            if not hasattr(self, "opponent_hp"):
-                self.opponent_hp = 0
-            self.previous_opponent_hp = self.opponent_hp
-            self.opponent_hp = self.pyboy.get_memory_value(0xCFE7)
-            print("opponent_hp", self.opponent_hp)
-            print("previous_opponent_hp", self.previous_opponent_hp)
-            if self.opponent_hp < self.previous_opponent_hp:
-                return 1
+            self.current_opp_pkm_hp < self.previous_opp_pkm_hp
+            and self.previous_opp_pkm_hp != 0
+            and self.current_opp_pkm_hp != 0
+        ):
+            return 1
         return 0
 
     ## Info functions

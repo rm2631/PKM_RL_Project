@@ -88,16 +88,17 @@ if __name__ == "__main__":
             **model_params,
         )
 
+    callbacks = [WandbCallback()]
+    if not TEST:
+        callbacks.append(ProgressBarCallback())
+
     if TEST:
         print_section("STARTING TEST")
     for episode in range(nb_episodes):
         print_section(f"Starting Episode {episode} of {nb_episodes}")
         model.learn(
             timesteps,
-            callback=[
-                WandbCallback(),
-                # ProgressBarCallback(),
-            ],
+            callback=callbacks,
         )
         if episode % 4 == 0:
             if save_model:
