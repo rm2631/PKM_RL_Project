@@ -2,9 +2,10 @@ from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback
 import numpy as np
 from stable_baselines3.common.logger import Image
+import wandb
 
 
-class TensorboardCallback(BaseCallback):
+class WandbCallback(BaseCallback):
     """
     Custom callback for plotting additional values in tensorboard.
     """
@@ -24,16 +25,18 @@ class TensorboardCallback(BaseCallback):
             index for index, i in enumerate(self.locals.get("rewards")) if i != 0
         ]
         if len(reward_index) != 0 or self.num_timesteps % 1000 == 0:
-            self.logger.record("step reward", sum(step_rewards))
-            self.logger.record("total reward", sum(total_rewards))
-            self.logger.record(
-                f"average total reward",
-                sum(total_rewards) / self.num_envs,
+            wandb.log(
+                {
+                    "step reward": sum(step_rewards),
+                    "total reward": sum(total_rewards),
+                    "average total reward": sum(total_rewards) / self.num_envs,
+                }
             )
-            for env_index in reward_index:
-                ## Get the image from the environment
-                self.__log_images(env_index)
-            self.logger.dump(step=self.num_timesteps)
+
+            # for env_index in reward_index:
+            #     ## Get the image from the environment
+            #     self.__log_images(env_index)
+            # self.logger.dump(step=self.num_timesteps)
         return True
 
     def __log_images(self, env_index):

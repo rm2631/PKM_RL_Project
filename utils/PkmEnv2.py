@@ -111,7 +111,8 @@ class PkmEnv(gym.Env):
         return observation, info  # reward, done, info can't be included
 
     def render(self, mode="human"):
-        pass
+        screen_stack = self._get_screen_stack()
+        return screen_stack
 
     def close(self):
         pass
@@ -216,17 +217,22 @@ class PkmEnv(gym.Env):
     ## Info functions
 
     def _get_info(self):
-        info = dict()
+        info = dict(
+            reward_memory=self.reward_memory,
+        )
         return info
 
     ## Reward functions
 
-    def print_reward(func):
+    def print_reward(func, weight=1):
         def wrapper(self):
             reward = func(self)
-            if reward != 0 and self.configs["verbose"]:
-                func_name = func.__name__
-                print(f"---- {func_name}: {reward} ----")
+            reward = reward * weight
+            if reward != 0:
+                self.reward_memory[func.__name__] = reward
+                if self.configs["verbose"]:
+                    func_name = func.__name__
+                    print(f"---- {func_name}: {reward} ----")
             return reward
 
         return wrapper
@@ -244,9 +250,12 @@ class PkmEnv(gym.Env):
             self.progress_counter = 0
 
     def _handle_reward(self):
+        ## Reset Rewards Info memory
+        self.reward_memory = dict()
+
         self.step_reward = dict(
-            position=self._handle_position_reward() * 0.05,
-            xp_gain=self._handle_xp_reward() * 0.5,
+            position=self._handle_position_reward(),
+            xp_gain=self._handle_xp_reward(),
         )
 
         ## Sum all rewards
@@ -257,7 +266,7 @@ class PkmEnv(gym.Env):
         self._update_progress_counter(reward)
         return reward
 
-    @print_reward
+    @print_reward(weight=0.05)
     def _handle_position_reward(self):
         Y = self.pyboy.get_memory_value(0xD361)
         X = self.pyboy.get_memory_value(0xD362)
@@ -288,7 +297,7 @@ class PkmEnv(gym.Env):
             ## If all else fails, return 0
         return 0
 
-    @print_reward
+    @print_reward(weight=0.5)
     def _handle_xp_reward(self):
         party_xp_memory_address = [0xD17B, 0xD1A7, 0xD1D3, 0xD1FF, 0xD22B, 0xD257]
         if hasattr(self, "current_party_xp"):

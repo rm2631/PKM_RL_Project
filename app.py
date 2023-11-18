@@ -2,9 +2,11 @@ import os
 from datetime import datetime
 from utils import create_env, print_section
 from utils.LoggingCallback import TensorboardCallback
+from utils.WandbCallback import WandbCallback
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import CheckpointCallback, ProgressBarCallback
+import wandb
 
 # from stable_baselines3.common.vec_env import VecMonitor
 
@@ -39,11 +41,6 @@ if TEST:
 timesteps = num_envs * timesteps_per_env
 
 
-def calc_required_space():
-    REQ_SPACE = num_envs * timesteps_per_env * (3 * 72) * 80 * 3 * 4
-    print(f"Required space: {REQ_SPACE} B")
-
-
 def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
     run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -70,9 +67,21 @@ def main():
     model_params = dict(
         env=env,
         device="cuda",
-        tensorboard_log=f"{log_path}/",
         n_steps=timesteps_per_env,
         batch_size=timesteps,
+    )
+
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="pokemon-rl",
+        # track hyperparameters and run metadata
+        config={
+            "num_envs": num_envs,
+            "timesteps_per_env": timesteps_per_env,
+            "nb_episodes": nb_episodes,
+            "log_type": log_type,
+            **model_params,
+        },
     )
 
     if os.path.isfile(f"{save_path}.zip"):
@@ -89,11 +98,9 @@ def main():
         print_section(f"Starting Episode {episode} of {nb_episodes}")
         model.learn(
             timesteps,
-            reset_num_timesteps=False,
-            tb_log_name=f"Episode_{episode}",
             callback=[
-                # TensorboardCallback(),
-                ProgressBarCallback(),
+                WandbCallback(),
+                # ProgressBarCallback(),
             ],
         )
         if episode % 4 == 0:

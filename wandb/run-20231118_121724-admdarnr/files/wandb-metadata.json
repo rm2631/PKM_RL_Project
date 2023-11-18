@@ -1,0 +1,53 @@
+{
+    "os": "Windows-10-10.0.22621-SP0",
+    "python": "3.8.8",
+    "heartbeatAt": "2023-11-18T17:17:25.091352",
+    "startedAt": "2023-11-18T17:17:24.004701",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "app.py",
+    "codePathLocal": "app.py",
+    "codePath": "app.py",
+    "git": {
+        "remote": "https://github.com/rm2631/PKM_RL_Project.git",
+        "commit": "df07e2bbc2a6c7c4827060d9cb8328da56084888"
+    },
+    "email": "marineau.robert@gmail.com",
+    "root": "C:/Users/marin/Documents/Repos/PKM_RL_Project",
+    "host": "Robert",
+    "username": "marin",
+    "executable": "c:\\Users\\marin\\Documents\\Repos\\PKM_RL_Project\\.venv\\Scripts\\python.exe",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 3800.0,
+        "min": 0.0,
+        "max": 3800.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3800.0,
+            "min": 0.0,
+            "max": 3800.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 464.0123710632324,
+            "used": 312.50329208374023
+        }
+    },
+    "gpu": "NVIDIA GeForce RTX 3080",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 3080",
+            "memory_total": 10737418240
+        }
+    ],
+    "memory": {
+        "total": 31.951766967773438
+    }
+}
