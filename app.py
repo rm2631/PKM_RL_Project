@@ -26,13 +26,13 @@ def print_section(text):
 
 if __name__ == "__main__":
     ################
-    TEST = True
+    TEST = False
     TOTAL_TIMESTEPS_TO_ACHIEVE = (
         7800000  ## This is the target for about 8 hours of training
     )
     ################
 
-    num_envs = 10 if not TEST else 1  ## Number of processes to use
+    num_envs = 11 if not TEST else 1  ## Number of processes to use
     timesteps_per_env = 5000 if not TEST else 1000  ## Number of timesteps per process
     nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
     render_mode = None if not TEST else "human"
@@ -51,6 +51,7 @@ if __name__ == "__main__":
         "render_mode": render_mode,
         "emulation_speed": 5,
         "verbose": verbose,
+        "verbose_exclude": ["_handle_position_reward"],
         "max_progress_without_reward": max_progress_without_reward,
         "log_type": log_type,
         "run_id": run_id,

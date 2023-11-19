@@ -42,6 +42,8 @@ class WandbCallback(BaseCallback):
                     if total_reward != 0:
                         wandb.log({"step reward": total_reward})
         ##TODO: Add a log when an environment resets
+        if any(self.locals.get("dones")):
+            wandb.log({"Environment Reset": 1})
         return True
 
     def __log_images(self, env_index, caption="Screenshot"):

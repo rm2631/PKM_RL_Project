@@ -207,20 +207,20 @@ class PkmEnv(gym.Env):
         return observation
 
     def _get_party_stats_obs(self):
-        self.party_level = _get_party_level()
-        self.party_hp = _get_party_hp()
-        self.max_party_hp = _get_party_max_hp()
-        ##
-        ##
+        self.party_level = self._get_party_level()
+        self.party_hp = self._get_party_hp()
+        self.max_party_hp = self._get_party_max_hp()
+        self.party_type = self._get_party_type(first_type=True)
+        self.party_type_2 = self._get_party_type(first_type=False)
 
         ## stack all party information
         observation = np.array(
             [
                 self.party_level,
-                # self.current_party_xp,
-                # self.previous_party_xp,
                 self.party_hp,
                 self.max_party_hp,
+                self.party_type,
+                self.party_type_2,
             ]
         ).T
         return observation
@@ -235,16 +235,26 @@ class PkmEnv(gym.Env):
     def _get_party_hp(self):
         party_hp = [
             self.pyboy.get_memory_value(i)
-            for i in [0xD16C, 0xD198, 0xD1C4, 0xD1F0, 0xD21C, 0xD248]
+            for i in [0xD16D, 0xD199, 0xD1C5, 0xD1F1, 0xD21D, 0xD249]
         ]
         return party_hp
 
     def _get_party_max_hp(self):
         party_max_hp = [
             self.pyboy.get_memory_value(i)
-            for i in [0xD18D, 0xD1B9, 0xD1E5, 0xD211, 0xD23D, 0xD269]
+            for i in [0xD18E, 0xD1BA, 0xD1E6, 0xD212, 0xD23E, 0xD26A]
         ]
         return party_max_hp
+
+    def _get_party_type(self, first_type=True):
+        first_type = [0xD170, 0xD19C, 0xD1C8, 0xD1F4, 0xD220, 0xD24C]
+        second_type = [0xD171, 0xD19D, 0xD1C9, 0xD1F5, 0xD221, 0xD24D]
+        if first_type:
+            type_array = first_type
+        else:
+            type_array = second_type
+        party_type = [self.pyboy.get_memory_value(i) for i in type_array]
+        return party_type
 
     ## Info functions
 
@@ -268,7 +278,8 @@ class PkmEnv(gym.Env):
                     self.reward_memory[func.__name__] = reward
                     if self.configs["verbose"]:
                         func_name = func.__name__
-                        print(f"---- {func_name}: {reward} ----")
+                        if func_name not in self.configs["verbose_exclude"]:
+                            print(f"---- {func_name}: {reward} ----")
                 return reward
 
             return wrapper
@@ -364,7 +375,7 @@ class PkmEnv(gym.Env):
         """
         Reward for leveling up or catching a new pokemon.
         """
-        party_level = _get_party_level()
+        party_level = self._get_party_level()
         if not hasattr(self, "max_party_level"):
             self.max_party_level = 6
         current_max_party_level = max(party_level)
@@ -378,8 +389,8 @@ class PkmEnv(gym.Env):
         """
         Reward for healing the party.
         """
-        self.party_hp = _get_party_hp()
-        self.max_party_hp = _get_party_max_hp()
+        self.party_hp = self._get_party_hp()
+        self.max_party_hp = self._get_party_max_hp()
         if not hasattr(self, "party_hp"):
             self.previous_party_hp = [0 for _ in range(6)]
         else:
@@ -388,6 +399,9 @@ class PkmEnv(gym.Env):
             self.previous_max_party_hp = [0 for _ in range(6)]
         else:
             self.previous_max_party_hp = self.max_party_hp
+        if sum(self.previous_party_hp) == 0:
+            ## Cases where the party was blacekd out, we don't want to reward healing
+            return 0
         if sum(self.party_hp) == sum(self.max_party_hp) and sum(
             self.previous_party_hp
         ) != sum(self.previous_max_party_hp):
@@ -418,7 +432,7 @@ class PkmEnv(gym.Env):
         After the max_level_threshold, this reward is always 0. This is to prevent the agent from grinding only.
         """
         max_level_threshold = self.configs.get("max_level_threshold") or 10
-        party_level = _get_party_level()
+        party_level = self._get_party_level()
         if any([level >= max_level_threshold for level in party_level]):
             return 0
         if not hasattr(self, "current_opp_pkm_hp"):
