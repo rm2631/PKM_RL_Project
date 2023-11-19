@@ -1,9 +1,15 @@
+from datetime import date
 import gym
 from gym import spaces
 from pyboy import PyBoy
 from pyboy.utils import WindowEvent
 import numpy as np
 from skimage.transform import resize
+import mediapy as media
+import os
+import wandb
+from datetime import datetime
+import random
 
 
 class PkmEnv(gym.Env):
@@ -65,7 +71,11 @@ class PkmEnv(gym.Env):
                     dtype=np.uint8,
                 ),
                 "party_stats": spaces.Box(
-                    low=0, high=255, shape=(6, 5), dtype=np.uint8
+                    ## 6 pokemons times the number of stats
+                    low=0,
+                    high=255,
+                    shape=(6, 6),
+                    dtype=np.uint8,
                 ),
             }
         )
@@ -81,21 +91,32 @@ class PkmEnv(gym.Env):
         self.screen = self.pyboy.botsupport_manager().screen()
         self.pyboy.set_emulation_speed(configs["emulation_speed"])
 
+    def _initialize_self(self):
+        self.screen_history = [
+            np.zeros(self.single_screen_size, dtype=np.uint8)
+            for _ in range(self.nb_stacked_screens)
+        ]
+
     def step(self, action):
         self._run_action(action)
         self._update_game_state()
+        self._add_video_frame()
         reward = self._handle_reward()
         observation = self._get_obs()
         terminated = False
         truncated = self._get_truncate_status()
         # truncated = False  ##TODO: remove this
         info = self._get_info()
+        if truncated or terminated:
+            self.video_writer.close()
         return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
         self.seed = seed
         if self.init_state:
             self.init_state = False
+            self.reset_seed = random.getrandbits(64)
+
             reset_attributes = [
                 "progress_counter",
                 "previous_maps",
@@ -108,6 +129,7 @@ class PkmEnv(gym.Env):
                     delattr(self, attribute)
             state_name = "ROMs/Pokemon Red.gb.state"
             self.pyboy.load_state(open(state_name, "rb"))
+            self._initialize_video_writer()
 
         observation = self._get_obs()
         info = self._get_info()
@@ -118,7 +140,7 @@ class PkmEnv(gym.Env):
         return screen
 
     def close(self):
-        pass
+        self.video_writer.close()
 
     ### Custom methods
 
@@ -142,6 +164,26 @@ class PkmEnv(gym.Env):
                 else:
                     self.pyboy._rendering(False)
                 self.pyboy.tick()
+
+    def _initialize_video_writer(self):
+        if self.configs.get("save_video"):
+            save_dir = os.path.join(
+                "rollouts", self.configs.get("run_name").name or "run", self.seed
+            )
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            datetime_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            video_name = f"{datetime_str}_{self.reset_seed}.mp4"
+            full_path = os.path.join(save_dir, video_name)
+            self.video_writer = media.VideoWriter(
+                full_path, self.single_screen_size[:2], fps=60
+            )
+            self.video_writer.__enter__()
+
+    def _add_video_frame(self):
+        if self.configs.get("save_video"):
+            screen = self._get_screen()[:, :, 0]
+            self.video_writer.add_image(screen)
 
     ## Observation functions
 
@@ -207,20 +249,15 @@ class PkmEnv(gym.Env):
         return observation
 
     def _get_party_stats_obs(self):
-        self.party_level = self._get_party_level()
-        self.party_hp = self._get_party_hp()
-        self.max_party_hp = self._get_party_max_hp()
-        self.party_type = self._get_party_type(first_type=True)
-        self.party_type_2 = self._get_party_type(first_type=False)
-
         ## stack all party information
         observation = np.array(
             [
-                self.party_level,
-                self.party_hp,
-                self.max_party_hp,
-                self.party_type,
-                self.party_type_2,
+                self._get_party_level(),
+                self._get_party_hp(),
+                self._get_party_max_hp(),
+                self._get_party_type(first_type=True),
+                self._get_party_type(first_type=False),
+                self._get_party_xp(),
             ]
         ).T
         return observation
@@ -255,6 +292,13 @@ class PkmEnv(gym.Env):
             type_array = second_type
         party_type = [self.pyboy.get_memory_value(i) for i in type_array]
         return party_type
+
+    def _get_party_xp(self):
+        party_xp = [
+            self.pyboy.get_memory_value(i)
+            for i in [0xD17B, 0xD1A7, 0xD1D3, 0xD1FF, 0xD22B, 0xD257]
+        ]
+        return party_xp
 
     ## Info functions
 
@@ -353,14 +397,11 @@ class PkmEnv(gym.Env):
 
     @log_reward(weight=0.5)
     def _handle_xp_reward(self):
-        party_xp_memory_address = [0xD17B, 0xD1A7, 0xD1D3, 0xD1FF, 0xD22B, 0xD257]
         if hasattr(self, "current_party_xp"):
             self.previous_party_xp = self.current_party_xp  ## Update previous party xp
         else:
             self.previous_party_xp = [0 for _ in range(6)]
-        self.current_party_xp = [
-            self.pyboy.get_memory_value(address) for address in party_xp_memory_address
-        ]
+        self.current_party_xp = self._get_party_xp()
         xp_gain = [
             (current - previous) / previous if previous != 0 else 0
             for current, previous in zip(self.current_party_xp, self.previous_party_xp)

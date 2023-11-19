@@ -11,7 +11,7 @@ import random
 
 def create_env(**configs):
     env = PkmEnv(**configs)
-    seed = random.getrandbits(128)
+    seed = random.getrandbits(64)
     env.reset(seed=seed)
     return env
 
@@ -26,7 +26,7 @@ def print_section(text):
 
 if __name__ == "__main__":
     ################
-    TEST = False
+    TEST = True
     TOTAL_TIMESTEPS_TO_ACHIEVE = (
         7800000  ## This is the target for about 8 hours of training
     )
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     verbose = False if not TEST else True
     save_model = True if not TEST else False
     log_type = "train" if not TEST else "test"
-    max_progress_without_reward = 1000 if not TEST else 1000
+    max_progress_without_reward = 5000 if not TEST else 5000
 
     timesteps = num_envs * timesteps_per_env
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
@@ -56,6 +56,7 @@ if __name__ == "__main__":
         "log_type": log_type,
         "run_id": run_id,
         "max_level_threshold": 8,
+        "save_video": True,
     }
 
     wandb.init(
@@ -65,6 +66,12 @@ if __name__ == "__main__":
         config={
             **configs,
         },
+    )
+
+    configs.update(
+        {
+            "run_name": wandb.run,
+        }
     )
 
     env = SubprocVecEnv(
