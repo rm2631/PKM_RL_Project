@@ -38,6 +38,10 @@ class WandbCallback(BaseCallback):
                 reward_memory = env_info.get("reward_memory")
                 if reward_memory is not None:
                     [wandb.log({key: value}) for key, value in reward_memory.items()]
+                    total_reward = sum(reward_memory.values())
+                    if total_reward != 0:
+                        wandb.log({"step reward": total_reward})
+        ##TODO: Add a log when an environment resets
         return True
 
     def __log_images(self, env_index, caption="Screenshot"):

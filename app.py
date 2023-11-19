@@ -26,7 +26,7 @@ def print_section(text):
 
 if __name__ == "__main__":
     ################
-    TEST = False
+    TEST = True
     TOTAL_TIMESTEPS_TO_ACHIEVE = (
         7800000  ## This is the target for about 8 hours of training
     )
@@ -36,9 +36,10 @@ if __name__ == "__main__":
     timesteps_per_env = 5000 if not TEST else 1000  ## Number of timesteps per process
     nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
     render_mode = None if not TEST else "human"
-    verbose = False if not TEST else False
+    verbose = False if not TEST else True
     save_model = True if not TEST else False
     log_type = "train" if not TEST else "test"
+    max_progress_without_reward = 1000 if not TEST else 1000
 
     timesteps = num_envs * timesteps_per_env
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
@@ -50,9 +51,10 @@ if __name__ == "__main__":
         "render_mode": render_mode,
         "emulation_speed": 5,
         "verbose": verbose,
-        "max_progress_without_reward": 10000,
+        "max_progress_without_reward": max_progress_without_reward,
         "log_type": log_type,
         "run_id": run_id,
+        "max_level_threshold": 8,
     }
 
     wandb.init(
@@ -100,10 +102,7 @@ if __name__ == "__main__":
             timesteps,
             callback=callbacks,
         )
-        if episode % 4 == 0:
-            if save_model:
-                model.save(save_path)
-    if save_model:
-        model.save(save_path)
-    env.close()
+        if save_model:
+            model.save(save_path)
     wandb.finish()
+    env.close()

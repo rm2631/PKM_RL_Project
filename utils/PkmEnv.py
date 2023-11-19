@@ -61,11 +61,11 @@ class PkmEnv(gym.Env):
                 "position_history": spaces.Box(
                     low=0,
                     high=255,
-                    shape=(3, self.position_history_size),
+                    shape=(self.position_history_size, 3),
                     dtype=np.uint8,
                 ),
                 "party_stats": spaces.Box(
-                    low=0, high=255, shape=(6, 3), dtype=np.uint8
+                    low=0, high=255, shape=(6, 5), dtype=np.uint8
                 ),
             }
         )
@@ -83,6 +83,7 @@ class PkmEnv(gym.Env):
 
     def step(self, action):
         self._run_action(action)
+        self._update_game_state()
         reward = self._handle_reward()
         observation = self._get_obs()
         terminated = False
@@ -97,9 +98,10 @@ class PkmEnv(gym.Env):
             self.init_state = False
             reset_attributes = [
                 "progress_counter",
+                "previous_maps",
                 "screen_history",
                 # "total_rewards", ##Commented out to keep track of total rewards over time
-                "previous_position",
+                "previous_positions",
             ]
             for attribute in reset_attributes:
                 if hasattr(self, attribute):
@@ -191,33 +193,58 @@ class PkmEnv(gym.Env):
         return observation
 
     def _get_previous_position_obs(self):
-        if not hasattr(self, "previous_position"):
-            self.previous_position = []
-        observation = self.previous_position[-self.position_history_size :]
+        if not hasattr(self, "previous_positions"):
+            self.previous_positions = []
+        observation = self.previous_positions[-self.position_history_size :]
         ## Fill with zeros if not enough positions
         if len(observation) < self.position_history_size:
             nb_of_padded_positions = self.position_history_size - len(observation)
             [
-                observation.append(np.zeros((3), dtype=np.uint8).T)
+                observation.append(np.zeros((3), dtype=np.uint8))
                 for _ in range(nb_of_padded_positions)
             ]
-        observation = np.array(observation).T
+        observation = np.array(observation)
         return observation
 
     def _get_party_stats_obs(self):
-        self.party_level = [
+        self.party_level = _get_party_level()
+        self.party_hp = _get_party_hp()
+        self.max_party_hp = _get_party_max_hp()
+        ##
+        ##
+
+        ## stack all party information
+        observation = np.array(
+            [
+                self.party_level,
+                # self.current_party_xp,
+                # self.previous_party_xp,
+                self.party_hp,
+                self.max_party_hp,
+            ]
+        ).T
+        return observation
+
+    def _get_party_level(self):
+        party_level = [
             self.pyboy.get_memory_value(i)
             for i in [0xD18C, 0xD1B8, 0xD1E4, 0xD210, 0xD23C, 0xD268]
         ]
-        if not hasattr(self, "current_party_xp"):
-            self.current_party_xp = [0 for _ in range(6)]
-        if not hasattr(self, "previous_party_xp"):
-            self.previous_party_xp = [0 for _ in range(6)]
-        ## stack all party information
-        observation = np.array(
-            [self.party_level, self.current_party_xp, self.previous_party_xp]
-        ).T
-        return observation
+        return party_level
+
+    def _get_party_hp(self):
+        party_hp = [
+            self.pyboy.get_memory_value(i)
+            for i in [0xD16C, 0xD198, 0xD1C4, 0xD1F0, 0xD21C, 0xD248]
+        ]
+        return party_hp
+
+    def _get_party_max_hp(self):
+        party_max_hp = [
+            self.pyboy.get_memory_value(i)
+            for i in [0xD18D, 0xD1B9, 0xD1E5, 0xD211, 0xD23D, 0xD269]
+        ]
+        return party_max_hp
 
     ## Info functions
 
@@ -249,6 +276,10 @@ class PkmEnv(gym.Env):
         return decorator
 
     def _update_game_state(self):
+        """
+        This function manages the state of the long term memory.
+        """
+        ##TODO
         pass
 
     def _update_progress_counter(self, reward):
@@ -266,9 +297,13 @@ class PkmEnv(gym.Env):
 
         self.step_reward = dict(
             position=self._handle_position_reward(),
-            xp_gain=self._handle_xp_reward(),
-            downed_pokemon=self._handle_downed_pokemon_reward(),
+            new_map=self._handle_new_map_reward(),
+            # xp_gain=self._handle_xp_reward(),
+            level_up=self._handle_level_reward(),
+            # downed_pokemon=self._handle_downed_pokemon_reward(),
             opponent_hp_loss=self._handle_dealing_dmg_reward(),
+            badges=self._handle_badges_reward(),
+            healing=self._handle_healing_reward(),
         )
 
         ## Sum all rewards
@@ -284,30 +319,25 @@ class PkmEnv(gym.Env):
         Y = self.pyboy.get_memory_value(0xD361)
         X = self.pyboy.get_memory_value(0xD362)
         M = self.pyboy.get_memory_value(0xD35E)
-        current_position = np.array([Y, X, M])
-        self.current_position = current_position
+        self.current_position = np.array([Y, X, M])
 
-        if not hasattr(self, "previous_position"):
-            self.previous_position = []
-        previous_position = self.previous_position
-        if len(previous_position) == 0:
-            self.previous_position.append(current_position)
+        if not hasattr(self, "previous_positions"):
+            self.previous_positions = []
+
+        ## Check if position has changed
+        if not any([all(p == self.current_position) for p in self.previous_positions]):
+            self.previous_positions.append(self.current_position)
+            return min(len(self.previous_positions) * 0.005, 1)
+        return 0
+
+    @log_reward(weight=0.2)
+    def _handle_new_map_reward(self):
+        if not hasattr(self, "previous_maps"):
+            self.previous_maps = []
+        current_map = self.current_position[2]
+        if current_map not in self.previous_maps:
+            self.previous_maps.append(current_map)
             return 1
-
-        else:
-            ## Filter positions that share same last coordinate
-            filtered_positions = [
-                pos for pos in self.previous_position if pos[2] == current_position[2]
-            ]
-            ## Calculate distance between last two positions
-            if len(filtered_positions) == 0:
-                self.previous_position.append(current_position)
-                return 1
-            distances = np.linalg.norm(filtered_positions - current_position, axis=1)
-            if distances.min() > 5:
-                self.previous_position.append(current_position)
-                return 1
-            ## If all else fails, return 0
         return 0
 
     @log_reward(weight=0.5)
@@ -324,12 +354,45 @@ class PkmEnv(gym.Env):
             (current - previous) / previous if previous != 0 else 0
             for current, previous in zip(self.current_party_xp, self.previous_party_xp)
         ]
-        ## Reward 1 for level up and 0.1 for xp gain above 10%
-        xp_gain = [
-            1 if xp_gain < 0 else 0.5 if xp_gain > 0.1 else 0 for xp_gain in xp_gain
-        ]
+        ## Reward 1 for level up and xp gain % otherwise
+        xp_gain = [min(1, 1 if xp_gain < 0 else xp_gain) for xp_gain in xp_gain]
         reward = sum(xp_gain)
         return reward
+
+    @log_reward(weight=2)
+    def _handle_level_reward(self):
+        """
+        Reward for leveling up or catching a new pokemon.
+        """
+        party_level = _get_party_level()
+        if not hasattr(self, "max_party_level"):
+            self.max_party_level = 6
+        current_max_party_level = max(party_level)
+        if current_max_party_level <= self.max_party_level:
+            return 0
+        self.max_party_level = current_max_party_level
+        return 1
+
+    @log_reward(weight=0.2)
+    def _handle_healing_reward(self):
+        """
+        Reward for healing the party.
+        """
+        self.party_hp = _get_party_hp()
+        self.max_party_hp = _get_party_max_hp()
+        if not hasattr(self, "party_hp"):
+            self.previous_party_hp = [0 for _ in range(6)]
+        else:
+            self.previous_party_hp = self.party_hp
+        if not hasattr(self, "max_party_hp"):
+            self.previous_max_party_hp = [0 for _ in range(6)]
+        else:
+            self.previous_max_party_hp = self.max_party_hp
+        if sum(self.party_hp) == sum(self.max_party_hp) and sum(
+            self.previous_party_hp
+        ) != sum(self.previous_max_party_hp):
+            return 1
+        return 0
 
     @log_reward(weight=0.1)
     def _handle_downed_pokemon_reward(self):
@@ -350,6 +413,14 @@ class PkmEnv(gym.Env):
 
     @log_reward(weight=0.01)
     def _handle_dealing_dmg_reward(self):
+        """
+        Reward for dealing damage to the opponent.
+        After the max_level_threshold, this reward is always 0. This is to prevent the agent from grinding only.
+        """
+        max_level_threshold = self.configs.get("max_level_threshold") or 10
+        party_level = _get_party_level()
+        if any([level >= max_level_threshold for level in party_level]):
+            return 0
         if not hasattr(self, "current_opp_pkm_hp"):
             self.previous_opp_pkm_hp = 0
         else:
@@ -363,6 +434,21 @@ class PkmEnv(gym.Env):
             return 1
         return 0
 
+    @log_reward(weight=5)
+    def _handle_badges_reward(self):
+        """
+        Reward for getting a new badge.
+        """
+        if not hasattr(self, "current_badge_count"):
+            self.previous_badge_count = 0
+        else:
+            self.previous_badge_count = self.current_badge_count
+        badge_memory = self.pyboy.get_memory_value(0xD356)
+        self.current_badge_count = bin(badge_memory).count("1")
+        if self.current_badge_count > self.previous_badge_count:
+            return 1
+        return 0
+
     ## Info functions
 
     def _get_truncate_status(self):
@@ -373,8 +459,17 @@ class PkmEnv(gym.Env):
         max_progress_without_reward = (
             self.configs.get("max_progress_without_reward") or 1000
         )
+        tenth_of_max_progress_without_reward = max_progress_without_reward // 10
+        if self.progress_counter > 0:
+            if self.progress_counter % tenth_of_max_progress_without_reward == 0:
+                if self.configs["verbose"]:
+                    print(
+                        f"Reached {self.progress_counter} of {max_progress_without_reward} steps until truncation"
+                    )
         if self.progress_counter >= max_progress_without_reward:
             self.init_state = True
+            if self.configs["verbose"]:
+                print(f"Truncated at {self.progress_counter} steps")
             return True
         else:
             return False
