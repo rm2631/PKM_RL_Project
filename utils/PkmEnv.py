@@ -77,6 +77,10 @@ class PkmEnv(gym.Env):
                     shape=(6, 6),
                     dtype=np.uint8,
                 ),
+                "step_progression": spaces.Box(
+                    low=0, high=255, shape=(2,), dtype=np.uint8
+                ),
+                ##TODO: Add to obs : badges, opponent stats
             }
         )
 
@@ -107,10 +111,10 @@ class PkmEnv(gym.Env):
         self.previous_maps = []
         self.max_party_level = 6
         ## HP
-        self.previous_party_hp = [0 for _ in range(6)]
-        self.current_party_hp = [0 for _ in range(6)]
-        self.current_max_party_hp = [0 for _ in range(6)]
-        self.previous_max_party_hp = [0 for _ in range(6)]
+        self.previous_party_hp = self._get_party_hp()
+        self.current_party_hp = self._get_party_hp()
+        self.current_max_party_hp = self._get_party_max_hp()
+        self.previous_max_party_hp = self._get_party_max_hp()
         ## OPP HP
         self.previous_opp_pkm_hp = 0
         self.current_opp_pkm_hp = 0
@@ -118,8 +122,8 @@ class PkmEnv(gym.Env):
         self.current_badge_count = 0
         self.previous_badge_count = 0
         ## XP
-        self.current_party_xp = [0 for _ in range(6)]
-        self.previous_party_xp = [0 for _ in range(6)]
+        self.current_party_xp = self._get_party_xp()
+        self.previous_party_xp = self._get_party_xp()
 
     def step(self, action):
         self._run_action(action)
@@ -129,7 +133,6 @@ class PkmEnv(gym.Env):
         observation = self._get_obs()
         terminated = False
         truncated = self._get_truncate_status()
-        # truncated = False  ##TODO: remove this
         info = self._get_info()
         if truncated or terminated:
             self.video_writer.close()
@@ -179,8 +182,9 @@ class PkmEnv(gym.Env):
                     self.pyboy._rendering(False)
                 self.pyboy.tick()
 
-    def _get_path(self):
+    def _get_path(self, prefix):
         path = os.path.join(
+            prefix,
             self.configs.get("run_id"),
             self.configs.get("run_name").name,
         )
@@ -188,19 +192,16 @@ class PkmEnv(gym.Env):
             os.makedirs(path)
         return path
 
-    def _get_file_name(self):
+    def _get_file_name(self, extension):
         datetime_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        file_name = f"{datetime_str}_{self.reset_seed}"
+        file_name = f"{datetime_str}_{self.reset_seed}" + extension
         return file_name
 
     def _initialize_video_writer(self):
         if self.configs.get("save_video"):
-            save_dir = os.path.join(
-                "rollouts",
-                self._get_path(),
-            )
-            video_name = self._get_file_name() + ".mp4"
-            full_path = os.path.join(save_dir, video_name)
+            path = self._get_path("rollouts")
+            file_name = self._get_file_name(".mp4")
+            full_path = os.path.join(path, file_name)
             self.video_writer = media.VideoWriter(
                 full_path, self.single_screen_size[:2], fps=60
             )
@@ -219,6 +220,9 @@ class PkmEnv(gym.Env):
             "position": self._get_current_position_obs(),
             "position_history": self._get_previous_position_obs(),
             "party_stats": self._get_party_stats_obs(),
+            "step_progression": np.array(
+                [self.progress_counter, self.configs.get("max_progress_without_reward")]
+            ),
         }
         return observation
 
@@ -366,6 +370,7 @@ class PkmEnv(gym.Env):
             opponent_hp_loss=self._handle_dealing_dmg_reward(),
             badges=self._handle_badges_reward(),
             healing=self._handle_healing_reward(),
+            max_steps_without_reward=self._handle_max_steps_without_reward(),
         )
 
         ## Sum all rewards
@@ -377,6 +382,7 @@ class PkmEnv(gym.Env):
 
     def _log_step_reward(self, reward):
         wandb.log({"step reward": reward})
+        ##TODO: Create a log file
 
     def _update_total_rewards(self, reward):
         self.total_rewards += reward
@@ -432,19 +438,25 @@ class PkmEnv(gym.Env):
         """
         Reward for healing the party.
         """
+        ## Set previous values
+        self.previous_party_hp = self.current_party_hp
+        self.previous_max_party_hp = self.max_party_hp
+        ## Set current values
         self.current_party_hp = self._get_party_hp()
         self.max_party_hp = self._get_party_max_hp()
-        self.previous_max_party_hp = self.max_party_hp
+
         if sum(self.previous_party_hp) == 0:
-            ## Cases where the party was blacekd out, we don't want to reward healing
+            ## Cases where the party was blacked out, we don't want to reward healing
             return 0
-        if sum(self.current_party_hp) == sum(self.max_party_hp) and sum(
-            self.previous_party_hp
-        ) != sum(self.previous_max_party_hp):
+        if sum(self.previous_party_hp) == sum(self.previous_max_party_hp):
+            ## Cases where the party was already full, we don't want to reward healing
+            return 0
+        if sum(self.current_party_hp) == sum(self.max_party_hp):
+            ## Cases where the party is full, we want to reward healing
             return 1
         return 0
 
-    @log_reward(weight=0.1)
+    @log_reward(weight=-0.1)
     def _handle_downed_pokemon_reward(self):
         party_hp_memory_address = [0xD16D, 0xD199, 0xD1C5, 0xD1F1, 0xD21D, 0xD249]
         self.previous_party_hp = self.current_party_hp
@@ -455,7 +467,7 @@ class PkmEnv(gym.Env):
             True if current == 0 and previous != 0 else False
             for current, previous in zip(self.current_party_hp, self.previous_party_hp)
         ]
-        reward = -1 if any(downed_pokemon) else 0
+        reward = 1 if any(downed_pokemon) else 0
         return reward
 
     @log_reward(weight=0.01)
@@ -490,12 +502,20 @@ class PkmEnv(gym.Env):
             return 1
         return 0
 
+    @log_reward(weight=-1)
+    def _handle_max_steps_without_reward(self):
+        """
+        Reward for reaching max_steps_without_reward.
+        """
+        max_progress_without_reward = self.configs.get("max_progress_without_reward")
+        if self.progress_counter >= max_progress_without_reward:
+            return 1
+        return 0
+
     ## Info functions
 
     def _get_truncate_status(self):
-        max_progress_without_reward = (
-            self.configs.get("max_progress_without_reward") or 1000
-        )
+        max_progress_without_reward = self.configs.get("max_progress_without_reward")
         tenth_of_max_progress_without_reward = max_progress_without_reward // 10
         if self.progress_counter > 0:
             if self.progress_counter % tenth_of_max_progress_without_reward == 0:

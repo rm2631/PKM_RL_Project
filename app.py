@@ -46,14 +46,14 @@ if __name__ == "__main__":
     )
     ################
 
-    num_envs = 11 if not TEST else 2  ## Number of processes to use
+    num_envs = 12 if not TEST else 2  ## Number of processes to use
     timesteps_per_env = 2500 if not TEST else 1000  ## Number of timesteps per process
     nb_episodes = TOTAL_TIMESTEPS_TO_ACHIEVE // (num_envs * timesteps_per_env)
     render_mode = None if not TEST else "human"
     verbose = False if not TEST else True
     save_model = True if not TEST else False
     log_type = "train" if not TEST else "test"
-    max_progress_without_reward = 5000 if not TEST else 100
+    max_progress_without_reward = 500 if not TEST else 100
 
     timesteps = num_envs * timesteps_per_env
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
