@@ -440,10 +440,10 @@ class PkmEnv(gym.Env):
         """
         ## Set previous values
         self.previous_party_hp = self.current_party_hp
-        self.previous_max_party_hp = self.max_party_hp
+        self.previous_max_party_hp = self.current_max_party_hp
         ## Set current values
         self.current_party_hp = self._get_party_hp()
-        self.max_party_hp = self._get_party_max_hp()
+        self.current_max_party_hp = self._get_party_max_hp()
 
         if sum(self.previous_party_hp) == 0:
             ## Cases where the party was blacked out, we don't want to reward healing
@@ -451,7 +451,7 @@ class PkmEnv(gym.Env):
         if sum(self.previous_party_hp) == sum(self.previous_max_party_hp):
             ## Cases where the party was already full, we don't want to reward healing
             return 0
-        if sum(self.current_party_hp) == sum(self.max_party_hp):
+        if sum(self.current_party_hp) == sum(self.current_max_party_hp):
             ## Cases where the party is full, we want to reward healing
             return 1
         return 0

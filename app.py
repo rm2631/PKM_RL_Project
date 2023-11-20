@@ -42,7 +42,7 @@ if __name__ == "__main__":
     ################
     TEST = False
     TOTAL_TIMESTEPS_TO_ACHIEVE = (
-        3600000  ## This is the target for about 8 hours of training
+        3600000  ## This is the target for about 4 hours of training
     )
     ################
 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     epoch = 0
     while True:
         epoch += 1
-        print_section("STARTING NEW RUN EPOCH: " + str(epoch))
+        print_section("STARTING NEW EPOCH: " + str(epoch))
         env = SubprocVecEnv(
             [
                 lambda: create_env(
