@@ -97,6 +97,7 @@ class PkmEnv(gym.Env):
 
         ## Game State
         self._initialize_self()
+        self.relevant_game_locations = [54]  ## PEWTER CITY GYM
 
     def _initialize_self(self):
         self.screen_history = [
@@ -366,7 +367,7 @@ class PkmEnv(gym.Env):
             new_map=self._handle_new_map_reward(),
             # xp_gain=self._handle_xp_reward(),
             level_up=self._handle_level_reward(),
-            # downed_pokemon=self._handle_downed_pokemon_reward(),
+            downed_pokemon=self._handle_downed_pokemon_reward(),
             opponent_hp_loss=self._handle_dealing_dmg_reward(),
             badges=self._handle_badges_reward(),
             healing=self._handle_healing_reward(),
@@ -388,19 +389,31 @@ class PkmEnv(gym.Env):
         self.total_rewards += reward
         wandb.log({"total_rewards": self.total_rewards})
 
-    @log_reward(weight=0.05)
+    @log_reward(weight=0.001)
     def _handle_position_reward(self):
+        def filter_maps(position, history):
+            current_map = position[2]
+            filtered_maps = [p for p in history if p[2] == current_map]
+            return filtered_maps
+
+        def get_min_distance(position, history):
+            if len(history) == 0:
+                return 0
+            distances = [np.linalg.norm(position - p) for p in history]
+            return min(distances)
+
         Y = self.pyboy.get_memory_value(0xD361)
         X = self.pyboy.get_memory_value(0xD362)
         M = self.pyboy.get_memory_value(0xD35E)
         self.current_position = np.array([Y, X, M])
-        ## Check if position has changed
-        if not any([all(p == self.current_position) for p in self.previous_positions]):
+        previous_positions = filter_maps(self.current_position, self.previous_positions)
+        min_distance = get_min_distance(self.current_position, previous_positions)
+        if min_distance > 3:
             self.previous_positions.append(self.current_position)
-            return min(len(self.previous_positions) * 0.005, 1)
+            return min(len(self.previous_positions), 100)
         return 0
 
-    @log_reward(weight=0.2)
+    @log_reward(weight=0.4)
     def _handle_new_map_reward(self):
         current_map = self.current_position[2]
         if current_map not in self.previous_maps:
@@ -502,13 +515,13 @@ class PkmEnv(gym.Env):
             return 1
         return 0
 
-    @log_reward(weight=-1)
+    @log_reward(weight=-0.3)
     def _handle_max_steps_without_reward(self):
         """
         Reward for reaching max_steps_without_reward.
         """
         max_progress_without_reward = self.configs.get("max_progress_without_reward")
-        if self.progress_counter >= max_progress_without_reward:
+        if (self.progress_counter + 1) >= max_progress_without_reward:
             return 1
         return 0
 
