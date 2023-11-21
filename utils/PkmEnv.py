@@ -97,7 +97,25 @@ class PkmEnv(gym.Env):
 
         ## Game State
         self._initialize_self()
-        self.relevant_game_locations = [54]  ## PEWTER CITY GYM
+        self.relevant_game_locations = [
+            41,  # VIRIDIAN_POKECENTER
+            45,  # VIRIDIAN_GYM
+            54,  # PEWTER_GYM
+            58,  # PEWTER_POKECENTER
+            64,  # CERULEAN_POKECENTER
+            65,  # CERULEAN_GYM
+            68,  # MT_MOON_POKECENTER
+            89,  # VERMILION_POKECENTER
+            92,  # VERMILION_GYM
+            133,  # CELADON_POKECENTER
+            134,  # CELADON_GYM
+            154,  # FUCHSIA_POKECENTER
+            157,  # FUCHSIA_GYM
+            166,  # CINNABAR_GYM
+            171,  # CINNABAR_POKECENTER
+            178,  # SAFFRON_GYM
+            182,  # SAFFRON_POKECENTER
+        ]
 
     def _initialize_self(self):
         self.screen_history = [
@@ -353,7 +371,7 @@ class PkmEnv(gym.Env):
 
     def _update_progress_counter(self, reward):
         ## Update progress counter
-        if reward == 0:
+        if reward <= 0:
             self.progress_counter += 1
         else:
             self.progress_counter = 0
@@ -364,14 +382,13 @@ class PkmEnv(gym.Env):
 
         self.step_reward = dict(
             position=self._handle_position_reward(),
-            new_map=self._handle_new_map_reward(),
-            # xp_gain=self._handle_xp_reward(),
+            significant_location=self._handle_relevant_location_reward(),
             level_up=self._handle_level_reward(),
             downed_pokemon=self._handle_downed_pokemon_reward(),
             opponent_hp_loss=self._handle_dealing_dmg_reward(),
             badges=self._handle_badges_reward(),
             healing=self._handle_healing_reward(),
-            max_steps_without_reward=self._handle_max_steps_without_reward(),
+            # max_steps_without_reward=self._handle_max_steps_without_reward(),
         )
 
         ## Sum all rewards
@@ -398,6 +415,7 @@ class PkmEnv(gym.Env):
 
         def get_min_distance(position, history):
             if len(history) == 0:
+                self.previous_positions.append(self.current_position)
                 return 0
             distances = [np.linalg.norm(position - p) for p in history]
             return min(distances)
@@ -413,26 +431,14 @@ class PkmEnv(gym.Env):
             return min(len(self.previous_positions), 100)
         return 0
 
-    @log_reward(weight=0.4)
-    def _handle_new_map_reward(self):
+    @log_reward(weight=1)
+    def _handle_relevant_location_reward(self):
         current_map = self.current_position[2]
-        if current_map not in self.previous_maps:
-            self.previous_maps.append(current_map)
-            return 1
+        if current_map in self.relevant_game_locations:
+            if current_map not in self.previous_maps:
+                self.previous_maps.append(current_map)
+                return 1
         return 0
-
-    @log_reward(weight=0.5)
-    def _handle_xp_reward(self):
-        self.previous_party_xp = self.current_party_xp  ## Update previous party xp
-        self.current_party_xp = self._get_party_xp()
-        xp_gain = [
-            (current - previous) / previous if previous != 0 else 0
-            for current, previous in zip(self.current_party_xp, self.previous_party_xp)
-        ]
-        ## Reward 1 for level up and xp gain % otherwise
-        xp_gain = [min(1, 1 if xp_gain < 0 else xp_gain) for xp_gain in xp_gain]
-        reward = sum(xp_gain)
-        return reward
 
     @log_reward(weight=2)
     def _handle_level_reward(self):
