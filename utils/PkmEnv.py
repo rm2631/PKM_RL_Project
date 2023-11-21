@@ -426,7 +426,7 @@ class PkmEnv(gym.Env):
         self.current_position = np.array([Y, X, M])
         previous_positions = filter_maps(self.current_position, self.previous_positions)
         min_distance = get_min_distance(self.current_position, previous_positions)
-        if min_distance > 3:
+        if min_distance > 1:
             self.previous_positions.append(self.current_position)
             return min(len(self.previous_positions), 100)
         return 0
