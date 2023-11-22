@@ -53,7 +53,7 @@ if __name__ == "__main__":
     verbose = False if not TEST else True
     save_model = True if not TEST else False
     log_type = "train" if not TEST else "test"
-    max_progress_without_reward = timesteps_per_env // 2 if not TEST else 1000
+    max_progress_without_reward = timesteps_per_env * 5 if not TEST else 20
 
     timesteps = num_envs * timesteps_per_env
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0

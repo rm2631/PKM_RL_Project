@@ -10,6 +10,7 @@ import os
 import wandb
 from datetime import datetime
 import random
+import json
 
 
 class PkmEnv(gym.Env):
@@ -58,6 +59,35 @@ class PkmEnv(gym.Env):
         )
 
         self.position_history_size = 20
+        self.relevant_game_locations = [
+            41,  # VIRIDIAN_POKECENTER
+            45,  # VIRIDIAN_GYM
+            54,  # PEWTER_GYM
+            58,  # PEWTER_POKECENTER
+            64,  # CERULEAN_POKECENTER
+            65,  # CERULEAN_GYM
+            68,  # MT_MOON_POKECENTER
+            89,  # VERMILION_POKECENTER
+            92,  # VERMILION_GYM
+            133,  # CELADON_POKECENTER
+            134,  # CELADON_GYM
+            154,  # FUCHSIA_POKECENTER
+            157,  # FUCHSIA_GYM
+            166,  # CINNABAR_GYM
+            171,  # CINNABAR_POKECENTER
+            178,  # SAFFRON_GYM
+            182,  # SAFFRON_POKECENTER
+            1,  # VIRIDIAN_CITY
+            2,  # PEWTER_CITY
+            3,  # CERULEAN_CITY
+            4,  # LAVENDER_TOWN
+            5,  # VERMILION_CITY
+            6,  # CELADON_CITY
+            7,  # FUCHSIA_CITY
+            8,  # CINNABAR_ISLAND
+            9,  # INDIGO_PLATEAU
+            10,  # SAFFRON_CITY
+        ]
         self.observation_space = spaces.Dict(
             {
                 "screen": spaces.Box(
@@ -97,25 +127,6 @@ class PkmEnv(gym.Env):
 
         ## Game State
         self._initialize_self()
-        self.relevant_game_locations = [
-            41,  # VIRIDIAN_POKECENTER
-            45,  # VIRIDIAN_GYM
-            54,  # PEWTER_GYM
-            58,  # PEWTER_POKECENTER
-            64,  # CERULEAN_POKECENTER
-            65,  # CERULEAN_GYM
-            68,  # MT_MOON_POKECENTER
-            89,  # VERMILION_POKECENTER
-            92,  # VERMILION_GYM
-            133,  # CELADON_POKECENTER
-            134,  # CELADON_GYM
-            154,  # FUCHSIA_POKECENTER
-            157,  # FUCHSIA_GYM
-            166,  # CINNABAR_GYM
-            171,  # CINNABAR_POKECENTER
-            178,  # SAFFRON_GYM
-            182,  # SAFFRON_POKECENTER
-        ]
 
     def _initialize_self(self):
         self.screen_history = [
@@ -144,6 +155,23 @@ class PkmEnv(gym.Env):
         self.current_party_xp = self._get_party_xp()
         self.previous_party_xp = self._get_party_xp()
 
+    def _log_obs(self):
+        try:
+            max_progress_without_reward = self.configs.get(
+                "max_progress_without_reward"
+            )
+            # tenth_of_max_progress_without_reward = max_progress_without_reward // 10
+            # if self.progress_counter % tenth_of_max_progress_without_reward == 0:
+            #     obs = self._get_obs()
+            #     path = self._get_path("logs")
+            #     file_name = self._get_file_name(".json")
+            #     ## SAVE TO JSON
+            #     full_path = os.path.join(path, file_name)
+            #     with open(full_path, "w") as f:
+            #         json.dump(obs, f)
+        except:
+            pass
+
     def step(self, action):
         self._run_action(action)
         self._update_game_state()
@@ -155,6 +183,7 @@ class PkmEnv(gym.Env):
         info = self._get_info()
         if truncated or terminated:
             self.video_writer.close()
+        self._log_obs()
         return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
@@ -382,7 +411,7 @@ class PkmEnv(gym.Env):
 
         self.step_reward = dict(
             position=self._handle_position_reward(),
-            significant_location=self._handle_relevant_location_reward(),
+            relevant_location=self._handle_relevant_location_reward(),
             level_up=self._handle_level_reward(),
             downed_pokemon=self._handle_downed_pokemon_reward(),
             opponent_hp_loss=self._handle_dealing_dmg_reward(),
