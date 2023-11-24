@@ -40,7 +40,7 @@ def print_section(text):
 
 if __name__ == "__main__":
     ################
-    TEST = True
+    TEST = False
     TOTAL_TIMESTEPS_TO_ACHIEVE = (
         3600000  ## This is the target for about 4 hours of training
     )
@@ -53,12 +53,14 @@ if __name__ == "__main__":
     verbose = False if not TEST else True
     save_model = True if not TEST else False
     log_type = "train" if not TEST else "test"
-    max_progress_without_reward = timesteps_per_env * 5 if not TEST else 20
+    max_progress_without_reward = timesteps_per_env * num_envs
 
     timesteps = num_envs * timesteps_per_env
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
     run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     save_path = "trained/PKM"
+
+    epoch = 1
     configs = {
         "rom_path": "ROMs/Pokemon Red.gb",
         "render_mode": render_mode,
@@ -70,11 +72,9 @@ if __name__ == "__main__":
         "run_id": run_id,
         "max_level_threshold": 8,
         "save_video": True,
+        "epoch": epoch,
     }
-
-    epoch = 0
     while True:
-        epoch += 1
         print_section("STARTING NEW EPOCH: " + str(epoch))
         env = SubprocVecEnv(
             [
@@ -112,3 +112,4 @@ if __name__ == "__main__":
             if save_model:
                 model.save(save_path)
         env.close()
+        epoch += 1

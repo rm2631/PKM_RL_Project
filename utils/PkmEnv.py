@@ -160,15 +160,20 @@ class PkmEnv(gym.Env):
             max_progress_without_reward = self.configs.get(
                 "max_progress_without_reward"
             )
-            # tenth_of_max_progress_without_reward = max_progress_without_reward // 10
-            # if self.progress_counter % tenth_of_max_progress_without_reward == 0:
-            #     obs = self._get_obs()
-            #     path = self._get_path("logs")
-            #     file_name = self._get_file_name(".json")
-            #     ## SAVE TO JSON
-            #     full_path = os.path.join(path, file_name)
-            #     with open(full_path, "w") as f:
-            #         json.dump(obs, f)
+            tenth_of_max_progress_without_reward = max_progress_without_reward // 10
+            if self.progress_counter % tenth_of_max_progress_without_reward == 0:
+                wandb.log({"locations": len(self.previous_maps)})
+                obs = self._get_obs()
+                ##pop the screen
+                obs.pop("screen")
+                for key, value in obs.items():
+                    obs[key] = value.tolist()
+                path = self._get_path("logs")
+                file_name = self._get_file_name(".json")
+                ## SAVE TO JSON
+                full_path = os.path.join(path, file_name)
+                with open(full_path, "w") as f:
+                    json.dump(obs, f)
         except:
             pass
 
@@ -301,6 +306,7 @@ class PkmEnv(gym.Env):
 
     def _get_previous_position_obs(self):
         observation = self.previous_positions[-self.position_history_size :]
+        observation.reverse()
         ## Fill with zeros if not enough positions
         if len(observation) < self.position_history_size:
             nb_of_padded_positions = self.position_history_size - len(observation)
@@ -435,7 +441,7 @@ class PkmEnv(gym.Env):
         self.total_rewards += reward
         wandb.log({"total_rewards": self.total_rewards})
 
-    @log_reward(weight=0.001)
+    @log_reward(weight=0.01)
     def _handle_position_reward(self):
         def filter_maps(position, history):
             current_map = position[2]
