@@ -1,4 +1,5 @@
 from datetime import date
+from hmac import new
 import gym
 from gym import spaces
 from pyboy import PyBoy
@@ -59,6 +60,7 @@ class PkmEnv(gym.Env):
         )
 
         self.position_history_size = 20
+        self.map_history_size = 15
         self.relevant_game_locations = [
             41,  # VIRIDIAN_POKECENTER
             45,  # VIRIDIAN_GYM
@@ -100,6 +102,9 @@ class PkmEnv(gym.Env):
                     shape=(self.position_history_size, 3),
                     dtype=np.uint8,
                 ),
+                "map_history": spaces.Box(
+                    low=0, high=255, shape=(self.map_history_size,), dtype=np.uint8
+                ),
                 "party_stats": spaces.Box(
                     ## 6 pokemons times the number of stats
                     low=0,
@@ -135,10 +140,11 @@ class PkmEnv(gym.Env):
         ]
         self.current_position = np.zeros((3), dtype=np.uint8)
         self.previous_positions = []
+        self.previous_rewarded_positions = []
         self.reward_memory = dict()
         self.progress_counter = 0
         self.total_rewards = 0
-        self.previous_maps = []
+        self.previous_relevant_maps = []
         self.max_party_level = 6
         ## HP
         self.previous_party_hp = self._get_party_hp()
@@ -162,7 +168,6 @@ class PkmEnv(gym.Env):
             )
             tenth_of_max_progress_without_reward = max_progress_without_reward // 10
             if self.progress_counter % tenth_of_max_progress_without_reward == 0:
-                wandb.log({"locations": len(self.previous_maps)})
                 obs = self._get_obs()
                 ##pop the screen
                 obs.pop("screen")
@@ -237,8 +242,9 @@ class PkmEnv(gym.Env):
 
     def _get_path(self, prefix):
         path = os.path.join(
-            prefix,
+            "run_logs",
             self.configs.get("run_id"),
+            prefix,
             self.configs.get("run_name").name,
         )
         if not os.path.exists(path):
@@ -272,6 +278,7 @@ class PkmEnv(gym.Env):
             "screen": self._get_screen_stack(),
             "position": self._get_current_position_obs(),
             "position_history": self._get_previous_position_obs(),
+            "map_history": self._get_map_history_obs(),
             "party_stats": self._get_party_stats_obs(),
             "step_progression": np.array(
                 [self.progress_counter, self.configs.get("max_progress_without_reward")]
@@ -315,6 +322,18 @@ class PkmEnv(gym.Env):
                 for _ in range(nb_of_padded_positions)
             ]
         observation = np.array(observation)
+        return observation
+
+    def _get_map_history_obs(self):
+        ## Get list of unique maps from previous positions
+        previous_maps = list(set([p[2] for p in self.previous_positions]))
+        observation = previous_maps[-self.map_history_size :]
+        observation.reverse()
+        ## Fill with zeros if not enough positions
+        if len(observation) < self.map_history_size:
+            nb_of_padded_positions = self.map_history_size - len(observation)
+            [observation.append(0) for _ in range(nb_of_padded_positions)]
+        observation = np.array(observation).T
         return observation
 
     def _get_party_stats_obs(self):
@@ -385,12 +404,19 @@ class PkmEnv(gym.Env):
                 reward = func(self)
                 reward = reward * weight
                 if reward != 0:
-                    self.reward_memory[func.__name__] = reward
+                    func_name = func.__name__
+                    self.reward_memory[func_name] = reward
+                    ## Update total reward
+                    func_total_name = f"total_{func_name}"
+                    if not hasattr(self, func_total_name):
+                        setattr(self, func_total_name, 0)
+                    total_reward = getattr(self, func_total_name)
+                    new_reward = total_reward + reward
+                    setattr(self, func_total_name, new_reward)
                     if self.configs["verbose"]:
-                        func_name = func.__name__
                         if func_name not in self.configs["verbose_exclude"]:
                             print(f"---- {func_name}: {reward} ----")
-                    wandb.log({func.__name__: reward})
+                    wandb.log({func_total_name: total_reward})
                 return reward
 
             return wrapper
@@ -401,8 +427,15 @@ class PkmEnv(gym.Env):
         """
         This function manages the state of the long term memory.
         """
-        ##TODO
-        pass
+        self.current_position = self._get_position()
+        self.previous_positions.append(self.current_position)
+
+    def _get_position(self):
+        Y = self.pyboy.get_memory_value(0xD361)
+        X = self.pyboy.get_memory_value(0xD362)
+        M = self.pyboy.get_memory_value(0xD35E)
+        current_position = np.array([Y, X, M])
+        return current_position
 
     def _update_progress_counter(self, reward):
         ## Update progress counter
@@ -428,14 +461,9 @@ class PkmEnv(gym.Env):
 
         ## Sum all rewards
         reward = sum(self.step_reward.values())
-        self._log_step_reward(reward)
         self._update_total_rewards(reward)
         self._update_progress_counter(reward)
         return reward
-
-    def _log_step_reward(self, reward):
-        wandb.log({"step reward": reward})
-        ##TODO: Create a log file
 
     def _update_total_rewards(self, reward):
         self.total_rewards += reward
@@ -443,6 +471,9 @@ class PkmEnv(gym.Env):
 
     @log_reward(weight=0.01)
     def _handle_position_reward(self):
+        ##TODO: Faire la différence entre les previous locations et les rewarded locations
+        ##TODO: Ajouter les cartes dans les observations
+
         def filter_maps(position, history):
             current_map = position[2]
             filtered_maps = [p for p in history if p[2] == current_map]
@@ -450,28 +481,28 @@ class PkmEnv(gym.Env):
 
         def get_min_distance(position, history):
             if len(history) == 0:
-                self.previous_positions.append(self.current_position)
+                self.previous_rewarded_positions.append(self.current_position)
                 return 0
             distances = [np.linalg.norm(position - p) for p in history]
             return min(distances)
 
-        Y = self.pyboy.get_memory_value(0xD361)
-        X = self.pyboy.get_memory_value(0xD362)
-        M = self.pyboy.get_memory_value(0xD35E)
-        self.current_position = np.array([Y, X, M])
-        previous_positions = filter_maps(self.current_position, self.previous_positions)
-        min_distance = get_min_distance(self.current_position, previous_positions)
+        previous_rewarded_positions = filter_maps(
+            self.current_position, self.previous_rewarded_positions
+        )
+        min_distance = get_min_distance(
+            self.current_position, previous_rewarded_positions
+        )
         if min_distance > 1:
-            self.previous_positions.append(self.current_position)
-            return min(len(self.previous_positions), 100)
+            self.previous_rewarded_positions.append(self.current_position)
+            return min(len(self.previous_rewarded_positions), 100)
         return 0
 
-    @log_reward(weight=1)
+    @log_reward(weight=3)
     def _handle_relevant_location_reward(self):
         current_map = self.current_position[2]
         if current_map in self.relevant_game_locations:
-            if current_map not in self.previous_maps:
-                self.previous_maps.append(current_map)
+            if current_map not in self.previous_relevant_maps:
+                self.previous_relevant_maps.append(current_map)
                 return 1
         return 0
 

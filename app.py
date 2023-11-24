@@ -42,7 +42,7 @@ if __name__ == "__main__":
     ################
     TEST = False
     TOTAL_TIMESTEPS_TO_ACHIEVE = (
-        3600000  ## This is the target for about 4 hours of training
+        10000000  ## This is the target for about 4 hours of training
     )
     ################
 
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     verbose = False if not TEST else True
     save_model = True if not TEST else False
     log_type = "train" if not TEST else "test"
-    max_progress_without_reward = timesteps_per_env * num_envs
+    max_progress_without_reward = timesteps_per_env
 
     timesteps = num_envs * timesteps_per_env
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
