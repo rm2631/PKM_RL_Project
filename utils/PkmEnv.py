@@ -1,5 +1,4 @@
 from datetime import date
-from hmac import new
 import gym
 from gym import spaces
 from pyboy import PyBoy
@@ -12,6 +11,11 @@ import wandb
 from datetime import datetime
 import random
 import json
+
+##TODO: Revalider les observations en fonction de emulation speed
+##TODO: Enregistrer les vidéos en full rez
+##TODO: Comprendre pourquoi l'env s'est arrêt dans volcanic-galaxy-678
+##TODO: Cesser de sauvegarder le position history lorsqu'en combat
 
 
 class PkmEnv(gym.Env):
@@ -45,7 +49,7 @@ class PkmEnv(gym.Env):
         }
         self.action_space = spaces.Discrete(len(self.command_map))
 
-        single_screen_size_downscale_ratio = 2
+        single_screen_size_downscale_ratio = 4
         ### Observation space
         self.single_screen_size = (
             144 // single_screen_size_downscale_ratio,
@@ -115,7 +119,6 @@ class PkmEnv(gym.Env):
                 "step_progression": spaces.Box(
                     low=0, high=255, shape=(2,), dtype=np.uint8
                 ),
-                ##TODO: Add to obs : badges, opponent stats
             }
         )
 
@@ -128,7 +131,8 @@ class PkmEnv(gym.Env):
             window_type=window_type,
         )
         self.screen = self.pyboy.botsupport_manager().screen()
-        self.pyboy.set_emulation_speed(configs["emulation_speed"])
+        if window_type != "headless":
+            self.pyboy.set_emulation_speed(configs["emulation_speed"])
 
         ## Game State
         self._initialize_self()
@@ -160,6 +164,12 @@ class PkmEnv(gym.Env):
         ## XP
         self.current_party_xp = self._get_party_xp()
         self.previous_party_xp = self._get_party_xp()
+        self._reset_total_rewards()
+
+    def _reset_total_rewards(self):
+        for attr in dir(self):
+            if attr.startswith("total__"):
+                delattr(self, attr)
 
     def _log_obs(self):
         try:
@@ -199,6 +209,7 @@ class PkmEnv(gym.Env):
     def reset(self, seed=None, options=None):
         self.seed = seed
         if self.init_state:
+            self._create_wandb_run()
             self.init_state = False
             self.reset_seed = random.getrandbits(64)
             self._initialize_self()
@@ -214,10 +225,29 @@ class PkmEnv(gym.Env):
         return screen
 
     def close(self):
-        self.video_writer.close()
-        wandb.finish()
+        try:
+            self.video_writer.close()
+            wandb.finish()
+        except:
+            pass
 
     ### Custom methods
+
+    def _create_wandb_run(self):
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project="pokemon-rl",
+            # track hyperparameters and run metadata
+            config={
+                **self.configs,
+            },
+            group=self.configs.get("run_id"),
+        )
+        self.configs.update(
+            {
+                "run_name": wandb.run,
+            }
+        )
 
     def _run_action(self, action):
         """
@@ -469,11 +499,8 @@ class PkmEnv(gym.Env):
         self.total_rewards += reward
         wandb.log({"total_rewards": self.total_rewards})
 
-    @log_reward(weight=0.01)
+    @log_reward(weight=0.001)
     def _handle_position_reward(self):
-        ##TODO: Faire la différence entre les previous locations et les rewarded locations
-        ##TODO: Ajouter les cartes dans les observations
-
         def filter_maps(position, history):
             current_map = position[2]
             filtered_maps = [p for p in history if p[2] == current_map]
@@ -612,6 +639,8 @@ class PkmEnv(gym.Env):
             self.init_state = True
             if self.configs["verbose"]:
                 print(f"Truncated at {self.progress_counter} steps")
+            self.video_writer.close()
+            wandb.finish()
             return True
         else:
             return False
