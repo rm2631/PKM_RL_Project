@@ -1,4 +1,5 @@
 from datetime import date
+from tabnanny import verbose
 import gym
 from gym import spaces
 from pyboy import PyBoy
@@ -11,11 +12,6 @@ import wandb
 from datetime import datetime
 import random
 import json
-
-##TODO: Revalider les observations en fonction de emulation speed
-##TODO: Enregistrer les vidéos en full rez
-##TODO: Comprendre pourquoi l'env s'est arrêt dans volcanic-galaxy-678
-##TODO: Cesser de sauvegarder le position history lorsqu'en combat
 
 
 class PkmEnv(gym.Env):
@@ -51,19 +47,20 @@ class PkmEnv(gym.Env):
 
         single_screen_size_downscale_ratio = 4
         ### Observation space
-        self.single_screen_size = (
-            144 // single_screen_size_downscale_ratio,
-            160 // single_screen_size_downscale_ratio,
-            1,
+        self.original_screen_size = (144, 160, 1)
+        self.scaled_screen_size = (
+            self.original_screen_size[0] // single_screen_size_downscale_ratio,
+            self.original_screen_size[1] // single_screen_size_downscale_ratio,
+            self.original_screen_size[2],
         )
         self.nb_stacked_screens = 3
         self.stacked_screen_size = (
-            self.single_screen_size[0],
-            self.single_screen_size[1],
-            self.single_screen_size[2] * self.nb_stacked_screens,
+            self.scaled_screen_size[0],
+            self.scaled_screen_size[1],
+            self.scaled_screen_size[2] * self.nb_stacked_screens,
         )
 
-        self.position_history_size = 20
+        self.position_history_size = 100
         self.map_history_size = 15
         self.relevant_game_locations = [
             41,  # VIRIDIAN_POKECENTER
@@ -131,20 +128,19 @@ class PkmEnv(gym.Env):
             window_type=window_type,
         )
         self.screen = self.pyboy.botsupport_manager().screen()
-        if window_type != "headless":
-            self.pyboy.set_emulation_speed(configs["emulation_speed"])
+
+        self.pyboy.set_emulation_speed(1)
 
         ## Game State
         self._initialize_self()
 
     def _initialize_self(self):
         self.screen_history = [
-            np.zeros(self.single_screen_size, dtype=np.uint8)
+            np.zeros(self.scaled_screen_size, dtype=np.uint8)
             for _ in range(self.nb_stacked_screens)
         ]
         self.current_position = np.zeros((3), dtype=np.uint8)
         self.previous_positions = []
-        self.previous_rewarded_positions = []
         self.reward_memory = dict()
         self.progress_counter = 0
         self.total_rewards = 0
@@ -213,7 +209,9 @@ class PkmEnv(gym.Env):
             self.init_state = False
             self.reset_seed = random.getrandbits(64)
             self._initialize_self()
-            state_name = "ROMs/Pokemon Red.gb.state"
+            ## random between 1 and 2
+            save_num = random.randint(1, 3)
+            state_name = f"ROMs/{save_num}_Pokemon Red.gb.state"
             self.pyboy.load_state(open(state_name, "rb"))
             self._initialize_video_writer()
         observation = self._get_obs()
@@ -292,13 +290,13 @@ class PkmEnv(gym.Env):
             file_name = self._get_file_name(".mp4")
             full_path = os.path.join(path, file_name)
             self.video_writer = media.VideoWriter(
-                full_path, self.single_screen_size[:2], fps=60
+                full_path, self.original_screen_size[:2], fps=60
             )
             self.video_writer.__enter__()
 
     def _add_video_frame(self):
         if self.configs.get("save_video"):
-            screen = self._get_screen()[:, :, 0]
+            screen = self._get_screen(full_resolution=True)[:, :, 0]
             self.video_writer.add_image(screen)
 
     ## Observation functions
@@ -316,10 +314,13 @@ class PkmEnv(gym.Env):
         }
         return observation
 
-    def _get_screen(self):
+    def _get_screen(self, full_resolution=False):
         screen = self.screen.screen_ndarray()
         ## Compress the screen to self.single_screen_size
-        screen = resize(screen, self.single_screen_size, anti_aliasing=True)
+        if not full_resolution:
+            screen = resize(screen, self.scaled_screen_size, anti_aliasing=True)
+        else:
+            screen = resize(screen, self.original_screen_size, anti_aliasing=True)
         return screen
 
     def _get_previous_screens_array(self):
@@ -458,7 +459,13 @@ class PkmEnv(gym.Env):
         This function manages the state of the long term memory.
         """
         self.current_position = self._get_position()
-        self.previous_positions.append(self.current_position)
+
+        ##Check if the last position is the same as the current position
+        if len(self.previous_positions) > 0:
+            if not np.array_equal(self.previous_positions[-1], self.current_position):
+                self.previous_positions.append(self.current_position)
+        else:
+            self.previous_positions.append(self.current_position)
 
     def _get_position(self):
         Y = self.pyboy.get_memory_value(0xD361)
@@ -499,30 +506,17 @@ class PkmEnv(gym.Env):
         self.total_rewards += reward
         wandb.log({"total_rewards": self.total_rewards})
 
-    @log_reward(weight=0.001)
+    @log_reward(weight=0.005)
     def _handle_position_reward(self):
-        def filter_maps(position, history):
-            current_map = position[2]
-            filtered_maps = [p for p in history if p[2] == current_map]
-            return filtered_maps
-
-        def get_min_distance(position, history):
-            if len(history) == 0:
-                self.previous_rewarded_positions.append(self.current_position)
-                return 0
-            distances = [np.linalg.norm(position - p) for p in history]
-            return min(distances)
-
-        previous_rewarded_positions = filter_maps(
-            self.current_position, self.previous_rewarded_positions
-        )
-        min_distance = get_min_distance(
-            self.current_position, previous_rewarded_positions
-        )
-        if min_distance > 1:
-            self.previous_rewarded_positions.append(self.current_position)
-            return min(len(self.previous_rewarded_positions), 100)
-        return 0
+        """
+        Reward for moving to a new position.
+        """
+        observation = self.previous_positions[
+            -self.position_history_size - 1 : -1
+        ]  ## -1 to exclude current position, otherwise we would never get a reward
+        if self.current_position in observation:
+            return 0
+        return 1
 
     @log_reward(weight=3)
     def _handle_relevant_location_reward(self):
