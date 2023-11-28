@@ -204,16 +204,16 @@ class PkmEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         self.seed = seed
-        if self.init_state:
-            self._create_wandb_run()
-            self.init_state = False
-            self.reset_seed = random.getrandbits(64)
-            self._initialize_self()
-            ## random between 1 and 2
-            save_num = random.randint(1, 3)
-            state_name = f"ROMs/{save_num}_Pokemon Red.gb.state"
-            self.pyboy.load_state(open(state_name, "rb"))
-            self._initialize_video_writer()
+        # if self.init_state:
+        self._create_wandb_run()
+        # self.init_state = False
+        self.reset_seed = random.getrandbits(64)
+        self._initialize_self()
+        ## random between 1 and 2
+        save_num = random.randint(1, 4)
+        state_name = f"ROMs/{save_num}_Pokemon Red.gb.state"
+        self.pyboy.load_state(open(state_name, "rb"))
+        self._initialize_video_writer()
         observation = self._get_obs()
         info = self._get_info()
         return observation, info  # reward, done, info can't be included

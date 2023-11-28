@@ -19,8 +19,8 @@ if type(TEST) != bool:
     TEST = TEST == "True"
 
 num_envs = 12 if not TEST else 1  ## Number of processes to use
-timesteps_per_env = 50000 if not TEST else 1000  ## Number of timesteps per process
-nb_episodes = 40
+timesteps_per_env = 100000 if not TEST else 1000  ## Number of timesteps per process
+nb_episodes = 20
 
 render_mode = None if not TEST else "human"
 verbose = False if not TEST else True
@@ -31,7 +31,7 @@ max_progress_without_reward = 5000
 timesteps = num_envs * timesteps_per_env
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Use GPU 0
 run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-save_path = "trained/PKM"
+save_path = f"trained/PKM_{run_id}"
 configs = {
     "rom_path": "ROMs/Pokemon Red.gb",
     "render_mode": render_mode,
