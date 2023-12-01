@@ -32,7 +32,6 @@ class PkmEnv(gym.Env):
         required_configs = ["rom_path", "render_mode", "emulation_speed"]
         for config in required_configs:
             assert config in configs, f"Missing {config} in configs"
-        self.init_state = True
 
         ### Action space
         self.command_map = {
@@ -91,6 +90,7 @@ class PkmEnv(gym.Env):
             9,  # INDIGO_PLATEAU
             10,  # SAFFRON_CITY
         ]
+
         self.observation_space = spaces.Dict(
             {
                 "screen": spaces.Box(
@@ -144,6 +144,7 @@ class PkmEnv(gym.Env):
         self.reward_memory = dict()
         self.progress_counter = 0
         self.total_rewards = 0
+        self.map_history = []
         self.previous_relevant_maps = []
         self.max_party_level = 6
         ## HP
@@ -169,11 +170,9 @@ class PkmEnv(gym.Env):
 
     def _log_obs(self):
         try:
-            max_progress_without_reward = self.configs.get(
-                "max_progress_without_reward"
-            )
-            tenth_of_max_progress_without_reward = max_progress_without_reward // 10
-            if self.progress_counter % tenth_of_max_progress_without_reward == 0:
+            episode_length = self.configs.get("episode_length")
+            tenth_of_episode_length = episode_length // 10
+            if self.progress_counter % tenth_of_episode_length == 0:
                 obs = self._get_obs()
                 ##pop the screen
                 obs.pop("screen")
@@ -203,17 +202,21 @@ class PkmEnv(gym.Env):
         return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
+        try:
+            self.video_writer.close()
+            wandb.finish()
+        except:
+            pass
+        if seed is None:
+            seed = random.getrandbits(64)
         self.seed = seed
-        # if self.init_state:
-        self._create_wandb_run()
-        # self.init_state = False
         self.reset_seed = random.getrandbits(64)
         self._initialize_self()
-        ## random between 1 and 2
+        self._create_wandb_run()
+        self._initialize_video_writer()
         save_num = random.randint(1, 4)
         state_name = f"ROMs/{save_num}_Pokemon Red.gb.state"
         self.pyboy.load_state(open(state_name, "rb"))
-        self._initialize_video_writer()
         observation = self._get_obs()
         info = self._get_info()
         return observation, info  # reward, done, info can't be included
@@ -232,6 +235,7 @@ class PkmEnv(gym.Env):
     ### Custom methods
 
     def _create_wandb_run(self):
+        # if self.configs.get("log_wandb"):
         wandb.init(
             # set the wandb project where this run will be logged
             project="pokemon-rl",
@@ -309,7 +313,7 @@ class PkmEnv(gym.Env):
             "map_history": self._get_map_history_obs(),
             "party_stats": self._get_party_stats_obs(),
             "step_progression": np.array(
-                [self.progress_counter, self.configs.get("max_progress_without_reward")]
+                [self.progress_counter, self.configs.get("episode_length")]
             ),
         }
         return observation
@@ -357,7 +361,7 @@ class PkmEnv(gym.Env):
 
     def _get_map_history_obs(self):
         ## Get list of unique maps from previous positions
-        previous_maps = list(set([p[2] for p in self.previous_positions]))
+        previous_maps = self.map_history
         observation = previous_maps[-self.map_history_size :]
         observation.reverse()
         ## Fill with zeros if not enough positions
@@ -434,19 +438,21 @@ class PkmEnv(gym.Env):
             def wrapper(self, *args, **kwargs):
                 reward = func(self)
                 reward = reward * weight
+                func_name = func.__name__
+                func_total_name = f"total_{func_name}"
+                if not hasattr(self, func_total_name):
+                    setattr(self, func_total_name, 0)
+                    if reward == 0:
+                        wandb.log({func_total_name: 0})
                 if reward != 0:
-                    func_name = func.__name__
                     self.reward_memory[func_name] = reward
                     ## Update total reward
-                    func_total_name = f"total_{func_name}"
-                    if not hasattr(self, func_total_name):
-                        setattr(self, func_total_name, 0)
                     total_reward = getattr(self, func_total_name)
-                    new_reward = total_reward + reward
-                    setattr(self, func_total_name, new_reward)
+                    total_reward = total_reward + reward
+                    setattr(self, func_total_name, total_reward)
                     if self.configs["verbose"]:
                         if func_name not in self.configs["verbose_exclude"]:
-                            print(f"---- {func_name}: {reward} ----")
+                            print(f"---- {func_name}: {total_reward} ----")
                     wandb.log({func_total_name: total_reward})
                 return reward
 
@@ -476,24 +482,22 @@ class PkmEnv(gym.Env):
 
     def _update_progress_counter(self, reward):
         ## Update progress counter
-        if reward <= 0:
-            self.progress_counter += 1
-        else:
-            self.progress_counter = 0
+        self.progress_counter += 1
 
     def _handle_reward(self):
         ## Reset Rewards Info memory
         self.reward_memory = dict()
 
         self.step_reward = dict(
+            # test=self._test_reward(),
             position=self._handle_position_reward(),
+            new_map=self._handle_new_map_reward(),
             relevant_location=self._handle_relevant_location_reward(),
             level_up=self._handle_level_reward(),
             downed_pokemon=self._handle_downed_pokemon_reward(),
             opponent_hp_loss=self._handle_dealing_dmg_reward(),
             badges=self._handle_badges_reward(),
             healing=self._handle_healing_reward(),
-            # max_steps_without_reward=self._handle_max_steps_without_reward(),
         )
 
         ## Sum all rewards
@@ -506,7 +510,7 @@ class PkmEnv(gym.Env):
         self.total_rewards += reward
         wandb.log({"total_rewards": self.total_rewards})
 
-    @log_reward(weight=0.005)
+    @log_reward(weight=0.0001)
     def _handle_position_reward(self):
         """
         Reward for moving to a new position.
@@ -514,12 +518,29 @@ class PkmEnv(gym.Env):
         observation = self.previous_positions[
             -self.position_history_size - 1 : -1
         ]  ## -1 to exclude current position, otherwise we would never get a reward
-        if self.current_position in observation:
+        if len(observation) == 0:
+            return 0
+        if any([np.array_equal(self.current_position, pos) for pos in observation]):
             return 0
         return 1
 
-    @log_reward(weight=3)
+    @log_reward(weight=1)
+    def _handle_new_map_reward(self):
+        """
+        Reward for entering a new map.
+        """
+        map_history = self.map_history
+        current_map = self.current_position[2]
+        if current_map not in map_history:
+            self.map_history.append(current_map)
+            return 1
+        return 0
+
+    @log_reward(weight=10)  ##TODO: reduce to 2
     def _handle_relevant_location_reward(self):
+        """
+        Reward for entering a relevant new relevant map.
+        """
         current_map = self.current_position[2]
         if current_map in self.relevant_game_locations:
             if current_map not in self.previous_relevant_maps:
@@ -608,33 +629,19 @@ class PkmEnv(gym.Env):
             return 1
         return 0
 
-    @log_reward(weight=-0.3)
-    def _handle_max_steps_without_reward(self):
-        """
-        Reward for reaching max_steps_without_reward.
-        """
-        max_progress_without_reward = self.configs.get("max_progress_without_reward")
-        if (self.progress_counter + 1) >= max_progress_without_reward:
+    @log_reward(weight=0.1)
+    def _test_reward(self):
+        current_map = self.current_position[2]
+        if current_map == 40:
             return 1
         return 0
 
     ## Info functions
 
     def _get_truncate_status(self):
-        max_progress_without_reward = self.configs.get("max_progress_without_reward")
-        tenth_of_max_progress_without_reward = max_progress_without_reward // 10
-        if self.progress_counter > 0:
-            if self.progress_counter % tenth_of_max_progress_without_reward == 0:
-                if self.configs["verbose"]:
-                    print(
-                        f"Reached {self.progress_counter} of {max_progress_without_reward} steps until truncation"
-                    )
-        if self.progress_counter >= max_progress_without_reward:
-            self.init_state = True
-            if self.configs["verbose"]:
-                print(f"Truncated at {self.progress_counter} steps")
-            self.video_writer.close()
-            wandb.finish()
+        episode_length = self.configs.get("episode_length")
+        if episode_length is None:
+            raise ValueError("Missing episode_length in configs")
+        if self.progress_counter >= (episode_length - 1):
             return True
-        else:
-            return False
+        return False
