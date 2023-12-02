@@ -4,7 +4,7 @@ from utils.PkmEnv import PkmEnv
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
 
-MODEL_PATH = "trained/PKM_2023-11-30_12-57-25.zip"
+MODEL_PATH = "trained/PKM_2023-11-30_22-56-02.zip"
 
 configs = {
     "rom_path": "ROMs/Pokemon Red.gb",
@@ -18,6 +18,7 @@ configs = {
     "max_level_threshold": 8,
     "save_video": False,
     "log_wandb": False,
+    "force_initial_state": 1,
 }
 
 
@@ -32,6 +33,6 @@ model = PPO.load(MODEL_PATH)
 
 
 obs, info = env.reset()
-for i in range(1000):
+while True:
     action, _state = model.predict(obs, deterministic=True)
     obs, reward, terminated, truncated, info = env.step(int(action))

@@ -12,18 +12,15 @@ import wandb
 from datetime import datetime
 import random
 import json
+from gymnasium import Env, spaces
 
 
-class PkmEnv(gym.Env):
+class PkmEnv(Env):
     """Custom Environment that follows gym interface"""
 
     metadata = {"render.modes": ["human"]}
 
     def __init__(self, **configs):
-        super(PkmEnv, self).__init__()
-        # Define action and observation space
-        # They must be gym.spaces objects
-        # Example when using discrete actions:
         self.metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
         self.reward_range = (0, 15000)
 
@@ -215,6 +212,8 @@ class PkmEnv(gym.Env):
         self._create_wandb_run()
         self._initialize_video_writer()
         save_num = random.randint(1, 4)
+        if self.configs.get("force_initial_state"):
+            save_num = self.configs.get("force_initial_state")
         state_name = f"ROMs/{save_num}_Pokemon Red.gb.state"
         self.pyboy.load_state(open(state_name, "rb"))
         observation = self._get_obs()
@@ -235,21 +234,31 @@ class PkmEnv(gym.Env):
     ### Custom methods
 
     def _create_wandb_run(self):
-        # if self.configs.get("log_wandb"):
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project="pokemon-rl",
-            # track hyperparameters and run metadata
-            config={
-                **self.configs,
-            },
-            group=self.configs.get("run_id"),
-        )
-        self.configs.update(
-            {
-                "run_name": wandb.run,
-            }
-        )
+        if self.configs.get("log_wandb"):
+            wandb.init(
+                # set the wandb project where this run will be logged
+                project="pokemon-rl",
+                # track hyperparameters and run metadata
+                config={
+                    **self.configs,
+                },
+                group=self.configs.get("run_id"),
+            )
+            self.configs.update(
+                {
+                    "run_name": wandb.run.name,
+                }
+            )
+        else:
+            self.configs.update(
+                {
+                    "run_name": date.today(),
+                }
+            )
+        
+    def _wandb_log(self, *args):
+        if self.configs.get("log_wandb"):
+            wandb.log(*args)
 
     def _run_action(self, action):
         """
@@ -277,7 +286,7 @@ class PkmEnv(gym.Env):
             "run_logs",
             self.configs.get("run_id"),
             prefix,
-            self.configs.get("run_name").name,
+            self.configs.get("run_name"),
         )
         if not os.path.exists(path):
             os.makedirs(path)
@@ -443,7 +452,7 @@ class PkmEnv(gym.Env):
                 if not hasattr(self, func_total_name):
                     setattr(self, func_total_name, 0)
                     if reward == 0:
-                        wandb.log({func_total_name: 0})
+                        self._wandb_log({func_total_name: 0})
                 if reward != 0:
                     self.reward_memory[func_name] = reward
                     ## Update total reward
@@ -453,7 +462,7 @@ class PkmEnv(gym.Env):
                     if self.configs["verbose"]:
                         if func_name not in self.configs["verbose_exclude"]:
                             print(f"---- {func_name}: {total_reward} ----")
-                    wandb.log({func_total_name: total_reward})
+                    self._wandb_log({func_total_name: total_reward})
                 return reward
 
             return wrapper
@@ -465,13 +474,6 @@ class PkmEnv(gym.Env):
         This function manages the state of the long term memory.
         """
         self.current_position = self._get_position()
-
-        ##Check if the last position is the same as the current position
-        if len(self.previous_positions) > 0:
-            if not np.array_equal(self.previous_positions[-1], self.current_position):
-                self.previous_positions.append(self.current_position)
-        else:
-            self.previous_positions.append(self.current_position)
 
     def _get_position(self):
         Y = self.pyboy.get_memory_value(0xD361)
@@ -495,7 +497,7 @@ class PkmEnv(gym.Env):
             relevant_location=self._handle_relevant_location_reward(),
             level_up=self._handle_level_reward(),
             downed_pokemon=self._handle_downed_pokemon_reward(),
-            opponent_hp_loss=self._handle_dealing_dmg_reward(),
+            # opponent_hp_loss=self._handle_dealing_dmg_reward(),
             badges=self._handle_badges_reward(),
             healing=self._handle_healing_reward(),
         )
@@ -508,18 +510,26 @@ class PkmEnv(gym.Env):
 
     def _update_total_rewards(self, reward):
         self.total_rewards += reward
-        wandb.log({"total_rewards": self.total_rewards})
+        self._wandb_log({"total_rewards": self.total_rewards})
 
     @log_reward(weight=0.0001)
     def _handle_position_reward(self):
         """
         Reward for moving to a new position.
+        If the position is already in the history, we don't want to reward it.
         """
-        observation = self.previous_positions[
-            -self.position_history_size - 1 : -1
-        ]  ## -1 to exclude current position, otherwise we would never get a reward
+
+        def add_position_to_history(self):
+            self.previous_positions.append(self.current_position)
+
+        observation = self.previous_positions[-self.position_history_size :]
+
         if len(observation) == 0:
-            return 0
+            add_position_to_history(self)
+            return 1
+        if not any([np.array_equal(self.current_position, pos) for pos in observation]):
+            add_position_to_history(self)
+            return 1
         if any([np.array_equal(self.current_position, pos) for pos in observation]):
             return 0
         return 1
@@ -536,7 +546,7 @@ class PkmEnv(gym.Env):
             return 1
         return 0
 
-    @log_reward(weight=10)  ##TODO: reduce to 2
+    @log_reward(weight=3)
     def _handle_relevant_location_reward(self):
         """
         Reward for entering a relevant new relevant map.
@@ -597,25 +607,25 @@ class PkmEnv(gym.Env):
         reward = 1 if any(downed_pokemon) else 0
         return reward
 
-    @log_reward(weight=0.01)
-    def _handle_dealing_dmg_reward(self):
-        """
-        Reward for dealing damage to the opponent.
-        After the max_level_threshold, this reward is always 0. This is to prevent the agent from grinding only.
-        """
-        max_level_threshold = self.configs.get("max_level_threshold") or 10
-        party_level = self._get_party_level()
-        if any([level >= max_level_threshold for level in party_level]):
-            return 0
-        self.previous_opp_pkm_hp = self.current_opp_pkm_hp
-        self.current_opp_pkm_hp = self.pyboy.get_memory_value(0xCFE7)
-        if (
-            self.current_opp_pkm_hp < self.previous_opp_pkm_hp
-            and self.previous_opp_pkm_hp != 0
-            and self.current_opp_pkm_hp != 0
-        ):
-            return 1
-        return 0
+    # @log_reward(weight=0.01)
+    # def _handle_dealing_dmg_reward(self):
+    #     """
+    #     Reward for dealing damage to the opponent.
+    #     After the max_level_threshold, this reward is always 0. This is to prevent the agent from grinding only.
+    #     """
+    #     max_level_threshold = self.configs.get("max_level_threshold") or 10
+    #     party_level = self._get_party_level()
+    #     if any([level >= max_level_threshold for level in party_level]):
+    #         return 0
+    #     self.previous_opp_pkm_hp = self.current_opp_pkm_hp
+    #     self.current_opp_pkm_hp = self.pyboy.get_memory_value(0xCFE7)
+    #     if (
+    #         self.current_opp_pkm_hp < self.previous_opp_pkm_hp
+    #         and self.previous_opp_pkm_hp != 0
+    #         and self.current_opp_pkm_hp != 0
+    #     ):
+    #         return 1
+    #     return 0
 
     @log_reward(weight=5)
     def _handle_badges_reward(self):
