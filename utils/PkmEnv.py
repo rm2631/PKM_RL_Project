@@ -125,9 +125,7 @@ class PkmEnv(Env):
             window_type=window_type,
         )
         self.screen = self.pyboy.botsupport_manager().screen()
-
-        self.pyboy.set_emulation_speed(1)
-
+        self.pyboy.set_emulation_speed(self.configs.get("emulation_speed") or 0)
         ## Game State
         self._initialize_self()
 
@@ -194,13 +192,13 @@ class PkmEnv(Env):
         truncated = self._get_truncate_status()
         info = self._get_info()
         if truncated or terminated:
-            self.video_writer.close()
+            self._close_video_writer()
         self._log_obs()
         return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
         try:
-            self.video_writer.close()
+            self._close_video_writer()
             wandb.finish()
         except:
             pass
@@ -226,7 +224,7 @@ class PkmEnv(Env):
 
     def close(self):
         try:
-            self.video_writer.close()
+            self._close_video_writer()
             wandb.finish()
         except:
             pass
@@ -255,7 +253,7 @@ class PkmEnv(Env):
                     "run_name": date.today(),
                 }
             )
-        
+
     def _wandb_log(self, *args):
         if self.configs.get("log_wandb"):
             wandb.log(*args)
@@ -306,6 +304,10 @@ class PkmEnv(Env):
                 full_path, self.original_screen_size[:2], fps=60
             )
             self.video_writer.__enter__()
+
+    def _close_video_writer(self):
+        if self.configs.get("save_video"):
+            self.video_writer.close()
 
     def _add_video_frame(self):
         if self.configs.get("save_video"):
