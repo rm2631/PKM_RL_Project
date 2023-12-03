@@ -30,7 +30,7 @@ if type(TEST) != bool:
     TEST = TEST == "True"
 
 ## Hyperparameters
-num_envs = 24 if not TEST else 1  ## > 24
+num_envs = 28 if not TEST else 1  ## > 24
 batch_size = 512
 n_steps = batch_size * 10
 episode_length = n_steps * 24
@@ -48,7 +48,6 @@ if __name__ == "__main__":
         "max_steps": 25000,
         "render_mode": "rgb_array" if not TEST else "human",
         "verbose": False if not TEST else True,
-        "log_wandb": True if not TEST else False,
         "save_video": True,
         "save_screens": False,
         "gamma": 0.998,
@@ -63,7 +62,8 @@ if __name__ == "__main__":
 
         return _init()
 
-    env = DummyVecEnv([lambda: make_env(**configs) for _ in range(num_envs)])
+    env = SubprocVecEnv([lambda: make_env(**configs) for _ in range(num_envs)])
+    eval_env = make_env(**configs)
     # env = VecVideoRecorder(
     #     env,
     #     _get_path("vec_videos"),
@@ -101,7 +101,14 @@ if __name__ == "__main__":
                 model_save_path=_get_path("models"),
                 model_save_freq=1000,
                 # verbose=2,
-            )
+            ),
+            EvalCallback(
+                eval_env,
+                best_model_save_path=_get_path("best_model"),
+                eval_freq=1000,
+                deterministic=True,
+                render=False,
+            ),
         ]
 
         if not TEST:

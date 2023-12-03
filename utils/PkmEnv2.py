@@ -1,6 +1,7 @@
 import os
 from math import floor, sqrt
 from pathlib import Path
+from tabnanny import verbose
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage.transform import resize
@@ -66,7 +67,10 @@ class PkmEnv2(Env):
             debugging=False,
             disable_input=False,
             window_type="headless" if self.render_mode != "human" else "SDL2",
+            verbose=False,
         )
+        if self.configs.get("emulation_speed"):
+            self.pyboy.set_emulation_speed(self.configs.get("emulation_speed"))
         self.screen = self.pyboy.botsupport_manager().screen()
 
     def render(self):
@@ -109,7 +113,7 @@ class PkmEnv2(Env):
         self._close_video_writer()
 
     def _truncate(self):
-        if self.current_step_count >= self.configs.get("max_steps"):
+        if self.current_step_count >= (self.configs.get("max_steps") or 25000):
             return True
         return False
 
@@ -211,15 +215,25 @@ class PkmEnv2(Env):
         return decorator
 
     def _handle_rewards(self):
-        rewards = {"new_coord": self._new_coord_reward()}
+        rewards = {
+            "new_coord": self._reward_new_coord(),
+            "new_map": self._reward_new_map(),
+        }
         reward = sum(rewards.values())
         return reward
 
-    @log_reward(weight=1)
-    def _new_coord_reward(self):
+    @log_reward(weight=0.0001)
+    def _reward_new_coord(self):
         position = self.position
         position_history = self.position_history[-self.position_history_length :]
         if not any([np.array_equal(position, pos) for pos in position_history]):
             self.position_history.append(position)
+            return 1
+        return 0
+
+    @log_reward(weight=1)
+    def _reward_new_map(self):
+        current_map = self.position[2]
+        if not any([current_map == pos[2] for pos in self.position_history]):
             return 1
         return 0
