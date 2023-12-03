@@ -8,7 +8,7 @@
             "name": "Debug App",
             "type": "python",
             "request": "launch",
-            "program": "app.py",
+            "program": "run_train.py",
             "console": "integratedTerminal",
             "justMyCode": false
         }

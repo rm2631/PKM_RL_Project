@@ -1,7 +1,4 @@
-from stable_baselines3.common.callbacks import (
-    CheckpointCallback,
-    ProgressBarCallback,
-)
+import os
 
 
 def print_section(text):
@@ -12,10 +9,10 @@ def print_section(text):
     print("" * 80)
 
 
-def handle_callbacks(is_test):
-    if is_test:
-        return []
-    else:
-        return [
-            ProgressBarCallback(),
-        ]
+def _get_path(prefix, reset_id=None):
+    path = os.path.join("artifacts", os.environ["run_name"], prefix)
+    if reset_id:
+        path = os.path.join(path, reset_id)
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return path
