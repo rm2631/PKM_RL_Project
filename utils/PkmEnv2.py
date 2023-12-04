@@ -12,7 +12,7 @@ from datetime import datetime
 import random
 from gymnasium import Env, spaces
 from pyboy.utils import WindowEvent
-from utils import _get_path
+from utils import _get_path, convert_array_to_image
 
 
 class PkmEnv2(Env):
@@ -30,7 +30,9 @@ class PkmEnv2(Env):
         self.action_space = spaces.Discrete(len(self.valid_actions))
 
         ### Screen space
-        single_screen_size_downscale_ratio = 4
+        single_screen_size_downscale_ratio = (
+            self.configs.get("single_screen_size_downscale_ratio") or 4
+        )
         self.original_screen_size = (144, 160, 1)
         self.scaled_screen_size = (
             self.original_screen_size[0] // single_screen_size_downscale_ratio,
@@ -53,15 +55,11 @@ class PkmEnv2(Env):
                 "screen": spaces.Box(
                     low=0, high=255, shape=self.stacked_screen_size, dtype=np.uint8
                 ),
-                # "position": spaces.Box(low=0, high=255, shape=(3,), dtype=np.uint8),
-                # "position_history": spaces.Box(
-                #     low=0,
-                #     high=255,
-                #     shape=(self.position_history_length, 3),
-                #     dtype=np.uint8,
-                # ),
                 "party_level": spaces.Box(low=0, high=255, shape=(6,), dtype=np.uint8),
                 "party_xp": spaces.Box(low=0, high=255, shape=(6,), dtype=np.uint8),
+                "party_hp": spaces.Box(low=0, high=255, shape=(6,), dtype=np.uint8),
+                "party_type": spaces.Box(low=0, high=255, shape=(6,), dtype=np.uint8),
+                "party_type2": spaces.Box(low=0, high=255, shape=(6,), dtype=np.uint8),
             }
         )
         self.pyboy = PyBoy(
@@ -82,26 +80,30 @@ class PkmEnv2(Env):
     def _get_obs(self):
         observation = {
             "screen": self._get_screen_stack(),
-            # "position": self.position,
-            # "position_history": list(
-            #     reversed(self.position_history[-self.position_history_length :])
-            # ),
             "party_level": self._get_party_level(),
             "party_xp": self._get_party_xp(),
+            "party_hp": self._get_party_hp(),
+            "party_type": self._get_party_type(first_type=True),
+            "party_type2": self._get_party_type(first_type=False),
         }
         return observation
 
     def step(self, action):
-        self.current_step_count += 1
+        self._initialize_step()
         self._tick_screen(action)
         self._update_game_state()
         self._add_video_frame()
         observation = self._get_obs()
         reward = self._handle_rewards()
         terminated = False
-        truncated = self._truncate()
-        info = {}
+        truncated = self._get_truncate_status()
+        info = self._get_info()
         return observation, reward, terminated, truncated, info
+
+    def _initialize_step(self):
+        self.current_step_count += 1
+        self.saved_screen = False
+        self.saved_screen_stack = False
 
     def reset(self, seed=None):
         self.seed = seed
@@ -110,13 +112,25 @@ class PkmEnv2(Env):
         self._initialize_game_state()
         self._initialize_video_writer()
         observation = self._get_obs()
-        info = {}
+        info = self._get_info()
         return observation, info
 
     def close(self):
         self._close_video_writer()
 
-    def _truncate(self):
+    def _get_info(self):
+        info = {
+            "current_step_count": self.current_step_count,
+            "screen_history": self.screen_history,
+            "position": self.position,
+            "position_history": self.position_history,
+            "rewarded_maps": self.rewarded_maps,
+            "max_party_level": self.max_party_level,
+            "current_badge_count": self.current_badge_count,
+        }
+        return info
+
+    def _get_truncate_status(self):
         if self.current_step_count >= (self.configs.get("max_steps") or 25000):
             return True
         return False
@@ -128,6 +142,7 @@ class PkmEnv2(Env):
         self.position_history = [np.zeros(3)] * self.position_history_length
         self.rewarded_maps = []
         self.max_party_level = 6
+        self.current_badge_count = 0
 
     def _update_game_state(self):
         self.position = self._get_position()
@@ -145,7 +160,8 @@ class PkmEnv2(Env):
             self.pyboy.tick()
 
     def _load_rom_state(self):
-        state_name = f"ROMs/1_Pokemon Red.gb.state"
+        state_id = random.randint(1, 4)
+        state_name = f"ROMs/{state_id}_Pokemon Red.gb.state"
         self.pyboy.load_state(open(state_name, "rb"))
 
     ### PATH
@@ -195,6 +211,29 @@ class PkmEnv2(Env):
         if self.configs.get("save_video"):
             self.video_writer.close()
 
+    def _save_screen(self):
+        if not self.saved_screen:
+            if self.configs.get("save_screens"):
+                screen = self._get_screen(full_resolution=True)
+                path = _get_path("screens", reset_id=self.reset_id)
+                file_name = self._get_file_name(".png")
+                full_path = os.path.join(path, file_name)
+                img = convert_array_to_image(screen)
+                img.save(full_path)
+                self.saved_screen = True
+
+    def _save_screen_stack(self):
+        pass
+        if not self.saved_screen_stack:
+            if self.configs.get("save_screens"):
+                screen = self._get_screen_stack()
+                path = _get_path("screens_stack", reset_id=self.reset_id)
+                file_name = self._get_file_name(".png")
+                full_path = os.path.join(path, file_name)
+                img = convert_array_to_image(screen)
+                img.save(full_path)
+                self.saved_screen_stack = True
+
     ##### GAME UTILS #####
 
     def _get_position(self):
@@ -218,6 +257,23 @@ class PkmEnv2(Env):
         ]
         return party_xp
 
+    def _get_party_hp(self):
+        party_hp = [
+            self.pyboy.get_memory_value(i)
+            for i in [0xD16D, 0xD199, 0xD1C5, 0xD1F1, 0xD21D, 0xD249]
+        ]
+        return party_hp
+
+    def _get_party_type(self, first_type=True):
+        first_type = [0xD170, 0xD19C, 0xD1C8, 0xD1F4, 0xD220, 0xD24C]
+        second_type = [0xD171, 0xD19D, 0xD1C9, 0xD1F5, 0xD221, 0xD24D]
+        if first_type:
+            type_array = first_type
+        else:
+            type_array = second_type
+        party_type = [self.pyboy.get_memory_value(i) for i in type_array]
+        return party_type
+
     ##### Rewards #####
 
     def log_reward(weight=1):
@@ -228,6 +284,9 @@ class PkmEnv2(Env):
                 if self.configs.get("verbose"):
                     if reward != 0:
                         print(f"===== {func.__name__}: {reward} =====")
+                if reward != 0:
+                    self._save_screen()
+                    self._save_screen_stack()
                 return reward
 
             return wrapper
@@ -239,6 +298,7 @@ class PkmEnv2(Env):
             "new_coord": self._reward_new_coord(),
             "new_map": self._reward_new_map(),
             "new_level": self._reward_new_level(),
+            "new_badge": self._reward_new_badge(),
         }
         reward = sum(rewards.values())
         return reward
@@ -271,3 +331,14 @@ class PkmEnv2(Env):
             return 0
         self.max_party_level = current_max_party_level
         return 1
+
+    @log_reward(weight=5)
+    def _reward_new_badge(self):
+        """
+        Reward for getting a new badge.
+        """
+        self.previous_badge_count = self.current_badge_count
+        self.current_badge_count = bin(self.pyboy.get_memory_value(0xD356)).count("1")
+        if self.current_badge_count > self.previous_badge_count:
+            return 1
+        return 0
