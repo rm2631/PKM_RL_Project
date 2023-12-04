@@ -53,13 +53,15 @@ class PkmEnv2(Env):
                 "screen": spaces.Box(
                     low=0, high=255, shape=self.stacked_screen_size, dtype=np.uint8
                 ),
-                "position": spaces.Box(low=0, high=255, shape=(3,), dtype=np.uint8),
-                "position_history": spaces.Box(
-                    low=0,
-                    high=255,
-                    shape=(self.position_history_length, 3),
-                    dtype=np.uint8,
-                ),
+                # "position": spaces.Box(low=0, high=255, shape=(3,), dtype=np.uint8),
+                # "position_history": spaces.Box(
+                #     low=0,
+                #     high=255,
+                #     shape=(self.position_history_length, 3),
+                #     dtype=np.uint8,
+                # ),
+                "party_level": spaces.Box(low=0, high=255, shape=(6,), dtype=np.uint8),
+                "party_xp": spaces.Box(low=0, high=255, shape=(6,), dtype=np.uint8),
             }
         )
         self.pyboy = PyBoy(
@@ -80,10 +82,12 @@ class PkmEnv2(Env):
     def _get_obs(self):
         observation = {
             "screen": self._get_screen_stack(),
-            "position": self.position,
-            "position_history": list(
-                reversed(self.position_history[-self.position_history_length :])
-            ),
+            # "position": self.position,
+            # "position_history": list(
+            #     reversed(self.position_history[-self.position_history_length :])
+            # ),
+            "party_level": self._get_party_level(),
+            "party_xp": self._get_party_xp(),
         }
         return observation
 
@@ -122,6 +126,8 @@ class PkmEnv2(Env):
         self.screen_history = [self._get_screen()] * self.nb_stacked_screens
         self.position = self._get_position()
         self.position_history = [np.zeros(3)] * self.position_history_length
+        self.rewarded_maps = []
+        self.max_party_level = 6
 
     def _update_game_state(self):
         self.position = self._get_position()
@@ -198,6 +204,20 @@ class PkmEnv2(Env):
         current_position = np.array([Y, X, M])
         return current_position
 
+    def _get_party_level(self):
+        party_level = [
+            self.pyboy.get_memory_value(i)
+            for i in [0xD18C, 0xD1B8, 0xD1E4, 0xD210, 0xD23C, 0xD268]
+        ]
+        return party_level
+
+    def _get_party_xp(self):
+        party_xp = [
+            self.pyboy.get_memory_value(i)
+            for i in [0xD17B, 0xD1A7, 0xD1D3, 0xD1FF, 0xD22B, 0xD257]
+        ]
+        return party_xp
+
     ##### Rewards #####
 
     def log_reward(weight=1):
@@ -218,6 +238,7 @@ class PkmEnv2(Env):
         rewards = {
             "new_coord": self._reward_new_coord(),
             "new_map": self._reward_new_map(),
+            "new_level": self._reward_new_level(),
         }
         reward = sum(rewards.values())
         return reward
@@ -234,6 +255,19 @@ class PkmEnv2(Env):
     @log_reward(weight=1)
     def _reward_new_map(self):
         current_map = self.position[2]
-        if not any([current_map == pos[2] for pos in self.position_history]):
+        if not current_map in self.rewarded_maps:
+            self.rewarded_maps.append(current_map)
             return 1
         return 0
+
+    @log_reward(weight=2)
+    def _reward_new_level(self):
+        """
+        Reward for leveling up or catching a new pokemon.
+        """
+        party_level = self._get_party_level()
+        current_max_party_level = sum(party_level)
+        if current_max_party_level <= self.max_party_level:
+            return 0
+        self.max_party_level = current_max_party_level
+        return 1

@@ -10,12 +10,12 @@ configs = {
     "verbose": True,
     "save_video": False,
     "save_screens": False,
-    "emulation_speed": 10,
+    "emulation_speed": 5,
 }
 
 # Load the environment and the trained model
 env = PkmEnv2(**configs)
-MODEL_PATH = "artifacts/2023-12-02_22-34-19/models/model.zip"
+MODEL_PATH = "artifacts/2023-12-03_15-39-10/models/model.zip"
 model = PPO.load(MODEL_PATH, env=env)
 
 obs, info = env.reset()
