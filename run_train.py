@@ -24,12 +24,12 @@ if type(TEST) != bool:
     TEST = TEST == "True"
 
 ## Hyperparameters
-num_envs = 24 if not TEST else 1
+num_envs = 18 if not TEST else 1
 batch_size = 512
 n_steps = batch_size * 10
 episode_length = n_steps * 24
 total_timesteps = num_envs * episode_length
-nb_epochs = 10
+nb_epochs = 20
 ## Hyperparameters
 
 
@@ -61,34 +61,36 @@ if __name__ == "__main__":
 
     env = SubprocVecEnv([lambda: make_env(**configs) for _ in range(num_envs)])
 
+    model_config = {
+        "device": "cuda",
+        "batch_size": batch_size,
+        "n_steps": n_steps,
+        "gamma": configs.get("gamma"),
+        "n_epochs": configs.get("n_epochs"),
+        "ent_coef": configs.get("ent_coef"),
+        "learning_rate": configs.get("learning_rate"),
+        "vf_coef": configs.get("vf_coef"),
+        "tensorboard_log": _get_path("tensorboard"),
+    }
+
     model = PPO(
         "MultiInputPolicy",
         env,
-        device="cuda",
-        batch_size=batch_size,
-        n_steps=n_steps,
-        gamma=configs.get("gamma"),
-        n_epochs=configs.get("n_epochs"),
-        ent_coef=configs.get("ent_coef"),
-        learning_rate=configs.get("learning_rate"),
-        vf_coef=configs.get("vf_coef"),
-        # verbose=1,
-        tensorboard_log=_get_path("tensorboard"),
-    )
-
-    run = wandb.init(
-        project="pkm-rl",
-        sync_tensorboard=True,
-        group=os.environ["run_name"],
-        config={
-            "test_run": TEST,
-            **configs,
-        },
+        **model_config,
     )
 
     for episode in range(nb_epochs):
         print_section(
             f"RUN NAME: {os.environ['run_name']}  EPISODE: {episode} of {nb_epochs}"
+        )
+        run = wandb.init(
+            project="pkm-rl",
+            sync_tensorboard=True,
+            group=os.environ["run_name"],
+            config={
+                "test_run": TEST,
+                **configs,
+            },
         )
 
         callbacks = [
@@ -107,6 +109,5 @@ if __name__ == "__main__":
             total_timesteps,
             callback=callbacks,
         )
-
-    run.finish()
+        run.finish()
     env.close()

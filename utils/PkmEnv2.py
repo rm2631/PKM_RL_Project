@@ -47,7 +47,35 @@ class PkmEnv2(Env):
         )
 
         ### Position space
-        self.position_history_length = 100
+        self.relevant_game_locations = [
+            41,  # VIRIDIAN_POKECENTER
+            45,  # VIRIDIAN_GYM
+            54,  # PEWTER_GYM
+            58,  # PEWTER_POKECENTER
+            64,  # CERULEAN_POKECENTER
+            65,  # CERULEAN_GYM
+            68,  # MT_MOON_POKECENTER
+            89,  # VERMILION_POKECENTER
+            92,  # VERMILION_GYM
+            133,  # CELADON_POKECENTER
+            134,  # CELADON_GYM
+            154,  # FUCHSIA_POKECENTER
+            157,  # FUCHSIA_GYM
+            166,  # CINNABAR_GYM
+            171,  # CINNABAR_POKECENTER
+            178,  # SAFFRON_GYM
+            182,  # SAFFRON_POKECENTER
+            1,  # VIRIDIAN_CITY
+            2,  # PEWTER_CITY
+            3,  # CERULEAN_CITY
+            4,  # LAVENDER_TOWN
+            5,  # VERMILION_CITY
+            6,  # CELADON_CITY
+            7,  # FUCHSIA_CITY
+            8,  # CINNABAR_ISLAND
+            9,  # INDIGO_PLATEAU
+            10,  # SAFFRON_CITY
+        ]
 
         ### Observation space
         self.observation_space = spaces.Dict(
@@ -120,18 +148,23 @@ class PkmEnv2(Env):
 
     def _get_info(self):
         info = {
+            "reset_id": self.reset_id,
             "current_step_count": self.current_step_count,
-            "screen_history": self.screen_history,
-            "position": self.position,
-            "position_history": self.position_history,
+            # "position": self.position,
+            # "position_history": self.position_history,
             "rewarded_maps": self.rewarded_maps,
             "max_party_level": self.max_party_level,
             "current_badge_count": self.current_badge_count,
+            "rewards": [
+                getattr(self, attr) for attr in dir(self) if attr.startswith("rt_")
+            ],
         }
         return info
 
     def _get_truncate_status(self):
         if self.current_step_count >= (self.configs.get("max_steps") or 25000):
+            if self.configs.get("verbose"):
+                print("===== Truncated =====")
             return True
         return False
 
@@ -139,10 +172,12 @@ class PkmEnv2(Env):
         self.current_step_count = 0
         self.screen_history = [self._get_screen()] * self.nb_stacked_screens
         self.position = self._get_position()
-        self.position_history = [np.zeros(3)] * self.position_history_length
+        self.position_history = []
         self.rewarded_maps = []
+        self.rewarded_important_maps = []
         self.max_party_level = 6
         self.current_badge_count = 0
+        self.current_party_hp = self._get_party_hp()
 
     def _update_game_state(self):
         self.position = self._get_position()
@@ -160,7 +195,10 @@ class PkmEnv2(Env):
             self.pyboy.tick()
 
     def _load_rom_state(self):
-        state_id = random.randint(1, 4)
+        if not self.configs.get("state_id"):
+            state_id = random.randint(1, 4)
+        else:
+            state_id = self.configs.get("state_id")
         state_name = f"ROMs/{state_id}_Pokemon Red.gb.state"
         self.pyboy.load_state(open(state_name, "rb"))
 
@@ -279,12 +317,20 @@ class PkmEnv2(Env):
     def log_reward(weight=1):
         def decorator(func):
             def wrapper(self, *args, **kwargs):
+                func_name = func.__name__
+                total_func_name = "rt_" + func_name
+                if not hasattr(self, total_func_name):
+                    setattr(self, total_func_name, 0)
+
                 reward = func(self)
                 reward = reward * weight
                 if self.configs.get("verbose"):
                     if reward != 0:
-                        print(f"===== {func.__name__}: {reward} =====")
+                        print(f"===== {func_name}: {reward} =====")
                 if reward != 0:
+                    ## Keep track of the total reward
+                    current_reward = getattr(self, total_func_name)
+                    setattr(self, total_func_name, current_reward + reward)
                     self._save_screen()
                     self._save_screen_stack()
                 return reward
@@ -299,6 +345,7 @@ class PkmEnv2(Env):
             "new_map": self._reward_new_map(),
             "new_level": self._reward_new_level(),
             "new_badge": self._reward_new_badge(),
+            "downed_pkm": self._reward_downed_pkm(),
         }
         reward = sum(rewards.values())
         return reward
@@ -306,13 +353,12 @@ class PkmEnv2(Env):
     @log_reward(weight=0.0001)
     def _reward_new_coord(self):
         position = self.position
-        position_history = self.position_history[-self.position_history_length :]
-        if not any([np.array_equal(position, pos) for pos in position_history]):
+        if not any([np.array_equal(position, pos) for pos in self.position_history]):
             self.position_history.append(position)
             return 1
         return 0
 
-    @log_reward(weight=1)
+    @log_reward(weight=2)
     def _reward_new_map(self):
         current_map = self.position[2]
         if not current_map in self.rewarded_maps:
@@ -320,7 +366,16 @@ class PkmEnv2(Env):
             return 1
         return 0
 
-    @log_reward(weight=2)
+    @log_reward(weight=1)
+    def _reward_relevant_map(self):
+        current_map = self.position[2]
+        if current_map in self.relevant_game_locations:
+            if not current_map in self.rewarded_important_maps:
+                self.rewarded_important_maps.append(current_map)
+                return 1
+        return 0
+
+    @log_reward(weight=0.5)
     def _reward_new_level(self):
         """
         Reward for leveling up or catching a new pokemon.
@@ -340,5 +395,16 @@ class PkmEnv2(Env):
         self.previous_badge_count = self.current_badge_count
         self.current_badge_count = bin(self.pyboy.get_memory_value(0xD356)).count("1")
         if self.current_badge_count > self.previous_badge_count:
+            print(f"{self.reset_id}: New badge!")
             return 1
+        return 0
+
+    @log_reward(weight=-0.1)
+    def _reward_downed_pkm(self):
+        self.previous_party_hp = self.current_party_hp
+        self.current_party_hp = self._get_party_hp()
+        ##Check if a pokemon has been downed
+        for prev, curr in zip(self.previous_party_hp, self.current_party_hp):
+            if prev != 0 and curr <= 0:
+                return 1
         return 0

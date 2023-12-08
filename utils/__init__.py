@@ -1,6 +1,11 @@
 import os
 import numpy as np
 from PIL import Image
+from datetime import datetime
+import json
+
+# from stable_baselines3.common.monitor import Monitor
+# from utils.PkmEnv2 import PkmEnv2
 
 
 def print_section(text):
@@ -9,6 +14,41 @@ def print_section(text):
     print(text)
     print("=" * 80)
     print("" * 80)
+
+
+def set_run_name(run_name=None):
+    if not run_name:
+        run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    os.environ["run_name"] = run_name
+    return run_name
+
+
+def ndarray_serializer(obj):
+    """Custom serializer for numpy objects"""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+
+def save_log(file_path, data_list):
+    """
+    Saves a list of dictionaries to a JSON file.
+    This function can handle numpy objects inside the dictionaries.
+
+    :param file_path: Path to the JSON file to be saved.
+    :param data_list: List of dictionaries to be saved.
+    """
+    try:
+        with open(file_path, "w") as file:
+            json.dump(data_list, file, default=ndarray_serializer)
+        print(f"Data successfully saved to {file_path}")
+    except Exception as e:
+        print(f"Error saving data: {e}")
 
 
 def _get_path(prefix, reset_id=None):
